@@ -1291,6 +1291,11 @@ textarea.input-soft:focus {
     color: #9f2e2e;
 }
 
+.status-pill.cancelled {
+    background: #f8e9e6;
+    color: #9a3f2c;
+}
+
 .dashboard-review-card {
     border: 1px solid #e7decb;
     border-radius: 14px;

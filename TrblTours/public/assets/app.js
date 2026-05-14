@@ -6,6 +6,7 @@
     const BOOKING_DRAFT_KEY = 'trbltours_booking_draft';
     const BOOKING_HISTORY_KEY = 'trbltours_booking_history';
     const TOUR_OVERRIDES_KEY = 'trbltours_tour_overrides';
+    const ACCOUNT_CACHE_KEY = 'trbltours_account_cache_v1';
     const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
     const BOOKING_PROCESSING_LOCK_KEY = 'trbltours_booking_processing_lock';
     const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
@@ -803,7 +804,16 @@
             const conversationId = payload.conversationId || '';
             return '/messages' + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
         }
-        if (item.type === 'booking.created' || item.type === 'booking.updated') {
+        if (
+            item.type === 'booking.created'
+            || item.type === 'booking.updated'
+            || item.type === 'booking.submitted'
+            || item.type === 'booking.accepted'
+            || item.type === 'booking.rejected'
+            || item.type === 'booking.cancelled'
+            || item.type === 'booking.completed'
+            || item.type === 'payment.successful'
+        ) {
             return '/my-bookings';
         }
         if (item.type === 'tour-request.updated') {
@@ -930,6 +940,29 @@
     function getLikes() {
         const likes = parseJSON(localStorage.getItem(LIKES_KEY), []);
         return Array.isArray(likes) ? likes : [];
+    }
+
+    function getCachedAccountData() {
+        const data = parseJSON(localStorage.getItem(ACCOUNT_CACHE_KEY), null);
+        return data && typeof data === 'object' ? data : null;
+    }
+
+    function setCachedAccountData(data) {
+        if (!data || typeof data !== 'object') {
+            localStorage.removeItem(ACCOUNT_CACHE_KEY);
+            return;
+        }
+        localStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify(data));
+    }
+
+    function syncAccountFromApi() {
+        return apiRequest('/tourist/account/profile').then(function (data) {
+            setCachedAccountData(data || null);
+            if (data && data.pusher && !window.TRBL_PUSHER) {
+                window.TRBL_PUSHER = data.pusher;
+            }
+            return data;
+        });
     }
 
     function setLikes(likes) {
@@ -1086,7 +1119,11 @@
 
     function syncLikesFromApi() {
         return apiRequest('/tourist/favorites/mine').then(function (data) {
-            const likes = data && Array.isArray(data.likes) ? data.likes.map(String) : [];
+            const apiLikes = data && Array.isArray(data.likes) ? data.likes.map(String) : [];
+            const localOnlyLikes = getLikes().filter(function (item) {
+                return Number.isNaN(Number(item));
+            });
+            const likes = Array.from(new Set(localOnlyLikes.concat(apiLikes)));
             setLikes(likes);
             bindLikeButtons();
             updateSavedCounters();
@@ -1103,6 +1140,7 @@
         }
 
         const likes = getLikes();
+        const previousLikes = likes.slice();
         const exists = likes.includes(id);
         const nextLikes = exists ? likes.filter(function (item) {
             return item !== id;
@@ -1121,7 +1159,10 @@
                     tour_listing_id: Number(id)
                 })
             }).catch(function () {
-                return null;
+                setLikes(previousLikes);
+                bindLikeButtons();
+                updateSavedCounters();
+                showToast('Unable to update likes right now.', 'danger');
             });
         }
 
@@ -1274,6 +1315,76 @@
         const visibleCounter = qs('#visibleCounter');
         let dbTours = [];
 
+        function mapLegacyCardToDbTour(card, tours) {
+            if (!card || !Array.isArray(tours) || !tours.length) {
+                return null;
+            }
+
+            const previewLink = qs('a[href*="/tour-preview?tour="]', card);
+            const queryTour = (function () {
+                if (!previewLink) {
+                    return '';
+                }
+                const href = previewLink.getAttribute('href') || '';
+                const query = href.split('?')[1] || '';
+                const params = new URLSearchParams(query);
+                return String(params.get('tour') || '').trim();
+            })();
+            const title = normalizeTourLookupKey((qs('h3', card) || {}).textContent || '');
+            const location = normalizeTourLookupKey((qs('p.text-xs.text-stone-500', card) || {}).textContent || '');
+
+            return tours.find(function (tour) {
+                const tourId = String(tour && tour.id ? tour.id : '').trim();
+                const slug = String(tour && tour.slug ? tour.slug : '').trim().toLowerCase();
+                const legacyKey = String(tour && tour.legacyKey ? tour.legacyKey : '').trim().toLowerCase();
+                if (queryTour) {
+                    const key = queryTour.toLowerCase();
+                    if (key === tourId || key === slug || key === legacyKey) {
+                        return true;
+                    }
+                }
+
+                const tourTitle = normalizeTourLookupKey(tour && tour.title ? tour.title : '');
+                if (!title || !tourTitle || title !== tourTitle) {
+                    return false;
+                }
+
+                const tourLocation = normalizeTourLookupKey(tour && tour.location ? tour.location : '');
+                if (!location || !tourLocation) {
+                    return true;
+                }
+
+                return location === tourLocation
+                    || location.indexOf(tourLocation) !== -1
+                    || tourLocation.indexOf(location) !== -1;
+            }) || null;
+        }
+
+        function hydrateLegacyExploreCardsWithDbTours(tours) {
+            qsa('.feed-item[data-type="tour"]:not(.feed-item-db)', feed).forEach(function (card) {
+                const match = mapLegacyCardToDbTour(card, tours);
+                if (!match || !/^\d+$/.test(String(match.id || ''))) {
+                    return;
+                }
+
+                card.dataset.dbTour = String(match.id);
+                card.dataset.price = String(Number(match.price || card.dataset.price || 0));
+                card.dataset.latest = String(Number(match.latest || Date.now()));
+
+                const previewLink = qs('a[href*="/tour-preview?tour="]', card);
+                if (previewLink) {
+                    previewLink.setAttribute('href', '/tour-preview?tour=' + encodeURIComponent(String(match.id)));
+                }
+
+                const likeBtn = qs('.like-save[data-like-id]', card);
+                if (likeBtn) {
+                    likeBtn.dataset.likeId = String(match.id);
+                }
+            });
+
+            bindLikeButtons(feed);
+        }
+
         let activeType = 'all';
         let activeRegion = 'all';
 
@@ -1348,6 +1459,21 @@
                     });
                 });
                 upsertGuideTourCatalogEntries(dbTours);
+                hydrateLegacyExploreCardsWithDbTours(dbTours);
+
+                const requiredLegacyKeys = ['bohol', 'elnido', 'coron', 'mtapo', 'batanes', 'siargao'];
+                const availableKeys = dbTours.map(function (tour) {
+                    return String(tour.legacyKey || tour.slug || '').trim().toLowerCase();
+                });
+                const hasCanonicalCatalog = requiredLegacyKeys.every(function (key) {
+                    return availableKeys.includes(key);
+                });
+                if (hasCanonicalCatalog) {
+                    qsa('.tour-card.feed-item:not(.feed-item-db)', feed).forEach(function (node) {
+                        node.remove();
+                    });
+                }
+
                 renderDbTours();
                 syncExploreCardsWithCatalog();
             }).catch(function () {
@@ -1693,6 +1819,7 @@
         applyFilters();
         syncLikesFromApi();
         syncToursFromApi();
+        window.setInterval(syncToursFromApi, 30000);
         subscribeRealtime('tour-listings', 'tour-listing.updated', function (payload) {
             const tour = payload && payload.tour ? payload.tour : null;
             if (!tour) {
@@ -1707,7 +1834,12 @@
         const editModal = qs('#editRequestModal');
         const editForm = qs('#editRequestForm');
         const requestGrid = qs('.request-manage-grid');
-        const cards = qsa('.request-manage-card');
+        if (requestGrid) {
+            qsa('.request-manage-card:not([data-db-request="true"])', requestGrid).forEach(function (node) {
+                node.remove();
+            });
+        }
+        const cards = qsa('.request-manage-card[data-db-request="true"]');
         const editModalInstance = editModal ? bootstrap.Modal.getOrCreateInstance(editModal) : null;
         const params = new URLSearchParams(window.location.search);
         const requestFromRoute = params.get('request');
@@ -1730,6 +1862,33 @@
         };
         let pendingGallery = [];
         let dbRequestMap = {};
+        const statsElements = {
+            total_requests: qs('[data-request-stats="total_requests"]'),
+            open_requests: qs('[data-request-stats="open_requests"]'),
+            selected_guides: qs('[data-request-stats="selected_guides"]'),
+            completed: qs('[data-request-stats="completed"]')
+        };
+
+        function applyRequestStats(stats) {
+            const source = stats && typeof stats === 'object' ? stats : {};
+            Object.keys(statsElements).forEach(function (key) {
+                const target = statsElements[key];
+                if (!target) {
+                    return;
+                }
+                const value = Number(source[key] || 0);
+                target.textContent = String(Math.max(0, Number.isFinite(value) ? value : 0));
+            });
+        }
+
+        function setRequestStatsLoading() {
+            Object.keys(statsElements).forEach(function (key) {
+                const target = statsElements[key];
+                if (target) {
+                    target.textContent = '...';
+                }
+            });
+        }
 
         function requestBadgeClass(status) {
             const value = String(status || '').toLowerCase();
@@ -1790,6 +1949,28 @@
             });
         }
 
+        function updateRequestStatus(requestId, status) {
+            return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify({ status: status })
+            });
+        }
+
+        function cancelRequest(requestId) {
+            return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)), {
+                method: 'DELETE',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                }
+            });
+        }
+
         function renderStoredRequests(requests) {
             if (!requestGrid) {
                 return;
@@ -1797,7 +1978,7 @@
 
             dbRequestMap = {};
 
-            qsa('[data-db-request="true"]', requestGrid).forEach(function (node) {
+            qsa('.request-manage-card', requestGrid).forEach(function (node) {
                 node.remove();
             });
 
@@ -1811,7 +1992,7 @@
                 card.innerHTML = [
                     '<div class="request-top">',
                     '<div class="post-identity">',
-                    '<img class="tourist-avatar" src="', escapeHtml(request.touristAvatar || 'images/manila.jpg'), '" alt="', escapeHtml(request.touristName || 'Tourist'), '">',
+                    '<img class="tourist-avatar" src="', escapeHtml(request.touristAvatar || '/images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';" alt="', escapeHtml(request.touristName || 'Tourist'), '">',
                     '<div>',
                     '<p class="tourist-name mb-0"><strong>', escapeHtml(request.touristName || 'Tourist'), '</strong></p>',
                     '<p class="small text-muted mb-0">', escapeHtml(String(request.createdAt || '').replace('T', ' ').slice(0, 16)), '</p>',
@@ -1846,6 +2027,9 @@
                     '<div class="d-flex gap-2 mt-3 flex-wrap">',
                     '<button class="btn-ghost" data-toggle-thread><i class="fa-regular fa-comments me-1"></i>View Negotiation</button>',
                     '<button class="btn-danger" data-cancel-request><i class="fa-solid fa-xmark me-1"></i>Cancel</button>',
+                    (String(request.status || '').toLowerCase() !== 'completed'
+                        ? '<button class="btn-gold" data-complete-request><i class="fa-solid fa-check me-1"></i>Mark Complete</button>'
+                        : ''),
                     (request.selectedGuideId
                         ? '<button class="btn-soft" data-open-conversation><i class="fa-regular fa-comments me-1"></i>Open Messages</button>'
                         : ''),
@@ -1859,6 +2043,7 @@
         function syncMyRequestsFromApi() {
             return apiRequest('/tourist/requests/mine').then(function (data) {
                 renderStoredRequests(data && Array.isArray(data.requests) ? data.requests : []);
+                applyRequestStats(data && data.stats ? data.stats : null);
                 if (requestFromRoute) {
                     const createdCard = qs('.request-manage-card[data-request-id="' + requestFromRoute + '"]');
                     if (createdCard) {
@@ -1866,10 +2051,12 @@
                     }
                 }
             }).catch(function () {
+                applyRequestStats(null);
                 return null;
             });
         }
 
+        setRequestStatsLoading();
         syncMyRequestsFromApi();
         if (params.get('created') === '1') {
             showToast('Request created successfully.', 'success');
@@ -1927,6 +2114,38 @@
                 const openConversationBtn = event.target.closest('[data-open-conversation]');
                 if (openConversationBtn) {
                     window.location.href = '/messages';
+                    return;
+                }
+
+                const completeBtn = event.target.closest('[data-complete-request]');
+                if (completeBtn) {
+                    const card = completeBtn.closest('[data-request-id]');
+                    const requestId = card ? String(card.dataset.requestId || '') : '';
+                    if (!requestId || !card || card.dataset.dbRequest !== 'true') {
+                        return;
+                    }
+                    updateRequestStatus(requestId, 'completed').then(function () {
+                        showToast('Request marked complete.', 'success');
+                        syncMyRequestsFromApi();
+                    }).catch(function (error) {
+                        showToast(error && error.message ? error.message : 'Unable to mark request complete.', 'danger');
+                    });
+                    return;
+                }
+
+                const cancelBtn = event.target.closest('[data-cancel-request]');
+                if (cancelBtn) {
+                    const card = cancelBtn.closest('[data-request-id]');
+                    const requestId = card ? String(card.dataset.requestId || '') : '';
+                    if (!requestId || !card || card.dataset.dbRequest !== 'true') {
+                        return;
+                    }
+                    cancelRequest(requestId).then(function () {
+                        showToast('Request canceled.', 'warning');
+                        syncMyRequestsFromApi();
+                    }).catch(function (error) {
+                        showToast(error && error.message ? error.message : 'Unable to cancel request.', 'danger');
+                    });
                 }
             });
         }
@@ -1939,6 +2158,16 @@
             if (!dbRequestMap[String(updatedRequest.id)]) {
                 return;
             }
+            syncMyRequestsFromApi();
+            syncNotificationsFromApi();
+        });
+
+        subscribeRealtime('tourist-requests', 'tour-request.updated', function () {
+            syncMyRequestsFromApi();
+            syncNotificationsFromApi();
+        });
+
+        subscribeRealtime('tourist-bookings', 'booking.updated', function () {
             syncMyRequestsFromApi();
             syncNotificationsFromApi();
         });
@@ -2236,11 +2465,15 @@
         const emptyState = qs('#bookingEmptyState');
         const reviewModal = qs('#reviewModal');
         const reviewForm = qs('#reviewForm');
-        const bookingHistory = getBookingHistory();
-        let activeTab = bookingHistory.length ? 'booked' : 'pending';
+        const cancelModal = qs('#bookingCancelModal');
+        const cancelConfirmBtn = qs('#confirmCancelBookingBtn');
+        const bookingHistory = [];
+        let activeTab = 'pending';
         let targetBookingId = null;
         let selectedStars = 0;
         let dbBookings = [];
+        let pendingCancelBookingId = null;
+        let countdownIntervalId = null;
 
         function formatBookingDate(entry) {
             const raw = entry.date || entry.bookedAt;
@@ -2306,6 +2539,9 @@
             if (state === 'booked') {
                 return 'Booked';
             }
+            if (state === 'cancelled') {
+                return 'Cancelled';
+            }
             return 'Pending Confirmation';
         }
 
@@ -2313,6 +2549,10 @@
             if (!grid) {
                 return;
             }
+
+            qsa('.booking-card:not([data-db-booking="true"])', grid).forEach(function (node) {
+                node.remove();
+            });
 
             qsa('.booking-card[data-db-booking="true"]', grid).forEach(function (node) {
                 node.remove();
@@ -2326,18 +2566,25 @@
                 card.dataset.bookingId = String(booking.id || '');
                 card.dataset.dbBooking = 'true';
                 card.innerHTML = [
-                    '<img class="media" src="', escapeHtml(booking.image || 'images/pangasinan.jpg'), '" alt="', escapeHtml(booking.tourTitle || 'Tour Booking'), '">',
+                    '<img class="media" src="', escapeHtml(booking.image || 'images/pangasinan.jpg'), '" onerror="this.onerror=null;this.src=\'images/pangasinan.jpg\';" alt="', escapeHtml(booking.tourTitle || 'Tour Booking'), '">',
                     '<div class="booking-body">',
                     '<h2 class="h6">', escapeHtml(booking.tourTitle || 'Tour Booking'), '</h2>',
                     '<div class="d-flex align-items-center gap-2 mb-2">',
-                    '<img src="', escapeHtml(booking.guideAvatar || 'images/manila.jpg'), '" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">',
+                    '<img src="', escapeHtml(booking.guideAvatar || 'images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'images/manila.jpg\';" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">',
                     '<small>Guide: ', escapeHtml(booking.guideName || 'Guide'), '</small>',
                     '</div>',
                     '<p class="small text-muted mb-2">Booking Date: ', escapeHtml(booking.bookingDate || 'To be confirmed'), '</p>',
                     '<p class="small mb-2">Amount: <strong>', formatPeso(booking.total || 0), '</strong></p>',
-                    '<span class="status-pill', state === 'completed' ? ' completed' : '', '">', mapStateLabel(state), '</span>',
+                    '<p class="small text-muted mb-2">Payment: <strong>', escapeHtml(formatPaymentStatusLabel(booking.paymentStatus)), '</strong>', booking.paymentMethod ? ' via ' + escapeHtml(booking.paymentMethod) : '', '</p>',
+                    '<span class="status-pill', state === 'completed' ? ' completed' : '', state === 'cancelled' ? ' cancelled' : '', '">', mapStateLabel(state), '</span>',
+                    state === 'pending' && booking.isCancellable
+                        ? '<p class="small text-muted mt-2" data-cancel-countdown data-seconds-left="' + escapeHtml(String(booking.cancellationSecondsLeft || 0)) + '">Cancel window: ' + escapeHtml(formatCountdown(booking.cancellationSecondsLeft || 0)) + '</p>'
+                        : '',
+                    state === 'pending' && !booking.isCancellable
+                        ? '<p class="small text-danger mt-2">Cancellation window expired.</p>'
+                        : '',
                     state === 'pending'
-                        ? '<button class="btn-danger w-100 mt-3" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="cancel"><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>'
+                        ? '<button class="btn-danger w-100 mt-3" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="cancel"' + (booking.isCancellable ? '' : ' disabled') + '><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>'
                         : '',
                     state === 'booked'
                         ? '<button class="btn-gold w-100 mt-3" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="mark_completed"><i class="fa-solid fa-check me-1"></i>Mark Completed</button>'
@@ -2350,12 +2597,34 @@
                 grid.prepend(card);
             });
 
+            if (countdownIntervalId) {
+                clearInterval(countdownIntervalId);
+                countdownIntervalId = null;
+            }
+            countdownIntervalId = window.setInterval(refreshCountdowns, 1000);
+
             renderTab();
         }
 
         function syncBookingsFromApi() {
             return apiRequest('/tourist/bookings/mine').then(function (data) {
                 dbBookings = data && Array.isArray(data.bookings) ? data.bookings : [];
+                if (!dbBookings.some(function (item) {
+                    return String(item.state || 'pending') === activeTab;
+                })) {
+                    activeTab = dbBookings.some(function (item) {
+                        return String(item.state || 'pending') === 'pending';
+                    })
+                        ? 'pending'
+                        : (dbBookings.some(function (item) {
+                            return String(item.state || 'pending') === 'booked';
+                        }) ? 'booked' : (dbBookings.some(function (item) {
+                            return String(item.state || 'pending') === 'completed';
+                        }) ? 'completed' : 'cancelled'));
+                    tabButtons.forEach(function (item) {
+                        item.classList.toggle('active', item.dataset.tab === activeTab);
+                    });
+                }
                 renderDbBookings();
             }).catch(function () {
                 return null;
@@ -2389,6 +2658,25 @@
             }
         }
 
+        function refreshCountdowns() {
+            qsa('[data-cancel-countdown]', grid).forEach(function (row) {
+                const next = Math.max(0, Number(row.dataset.secondsLeft || 0) - 1);
+                row.dataset.secondsLeft = String(next);
+                row.textContent = next > 0
+                    ? 'Cancel window: ' + formatCountdown(next)
+                    : 'Cancel window expired';
+
+                if (next <= 0) {
+                    const card = row.closest('.booking-card');
+                    const cancelBtn = card ? qs('[data-transition-action="cancel"]', card) : null;
+                    if (cancelBtn) {
+                        cancelBtn.disabled = true;
+                    }
+                    row.classList.add('text-danger');
+                }
+            });
+        }
+
         tabButtons.forEach(function (button) {
             button.addEventListener('click', function () {
                 activeTab = button.dataset.tab;
@@ -2405,23 +2693,18 @@
                 if (transitionBtn) {
                     const bookingId = transitionBtn.dataset.transitionBooking;
                     const action = transitionBtn.dataset.transitionAction;
+                    if (action === 'cancel' && cancelModal && cancelConfirmBtn) {
+                        pendingCancelBookingId = bookingId;
+                        bootstrap.Modal.getOrCreateInstance(cancelModal).show();
+                        return;
+                    }
+
                     transitionBooking(bookingId, action).then(function () {
                         showToast(action === 'cancel' ? 'Booking canceled.' : 'Booking marked completed.', 'success');
                         syncBookingsFromApi();
                     }).catch(function (error) {
                         showToast(error && error.message ? error.message : 'Unable to update booking.', 'danger');
                     });
-                    return;
-                }
-
-                const cancelBtn = event.target.closest('[data-cancel-booking]');
-                if (cancelBtn) {
-                    const card = cancelBtn.closest('.booking-card');
-                    if (card) {
-                        card.remove();
-                        showToast('Booking canceled.', 'warning');
-                        renderTab();
-                    }
                     return;
                 }
 
@@ -2451,6 +2734,31 @@
                     }
                     window.location.href = '/booking/confirmation';
                 }
+            });
+        }
+
+        if (cancelConfirmBtn && cancelModal) {
+            cancelConfirmBtn.addEventListener('click', function () {
+                if (!pendingCancelBookingId) {
+                    return;
+                }
+
+                const bookingId = pendingCancelBookingId;
+                setButtonLoading(cancelConfirmBtn, true);
+                transitionBooking(bookingId, 'cancel').then(function () {
+                    bootstrap.Modal.getOrCreateInstance(cancelModal).hide();
+                    pendingCancelBookingId = null;
+                    showToast('Booking canceled.', 'success');
+                    syncBookingsFromApi();
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to cancel booking.', 'danger');
+                }).finally(function () {
+                    setButtonLoading(cancelConfirmBtn, false);
+                });
+            });
+
+            cancelModal.addEventListener('hidden.bs.modal', function () {
+                pendingCancelBookingId = null;
             });
         }
 
@@ -2490,7 +2798,6 @@
             });
         }
 
-        injectHistoryBookings();
         syncBookingsFromApi();
         subscribeRealtime('tourist-bookings', 'booking.updated', function () {
             syncBookingsFromApi();
@@ -2535,6 +2842,21 @@
             return;
         }
         const empty = qs('#likesEmpty');
+
+        function syncLikeCatalogFromApi() {
+            return apiRequest('/tourist/tours/feed').then(function (data) {
+                const tours = data && Array.isArray(data.tours) ? data.tours : [];
+                upsertGuideTourCatalogEntries(tours.map(function (tour) {
+                    return Object.assign({}, tour, {
+                        id: String(tour.id || ''),
+                    });
+                }));
+                return tours;
+            }).catch(function () {
+                return [];
+            });
+        }
+
         function render() {
             const likedTours = getLikes().map(function (id) {
                 return getTourById(id);
@@ -2584,7 +2906,9 @@
             });
         });
 
-        render();
+        Promise.allSettled([syncLikesFromApi(), syncLikeCatalogFromApi()]).finally(function () {
+            render();
+        });
     }
 
     function getBookingDraft() {
@@ -2605,10 +2929,140 @@
         localStorage.setItem(BOOKING_HISTORY_KEY, JSON.stringify(list.slice(0, 20)));
     }
 
+    function formatPaymentStatusLabel(status) {
+        const value = String(status || 'unpaid').trim().toLowerCase();
+        if (value === 'paid') {
+            return 'Paid';
+        }
+        if (value === 'partial') {
+            return 'Partially Paid';
+        }
+        if (value === 'refunded') {
+            return 'Refunded';
+        }
+        return 'Unpaid';
+    }
+
+    function formatCountdown(seconds) {
+        const total = Math.max(0, Number(seconds || 0));
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = Math.floor(total % 60);
+
+        if (hours > 0) {
+            return hours + 'h ' + String(minutes).padStart(2, '0') + 'm';
+        }
+        return minutes + 'm ' + String(secs).padStart(2, '0') + 's';
+    }
+
+    function normalizeTourLookupKey(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/&amp;/g, '&')
+            .replace(/[^a-z0-9\s&-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function createBookingFromDraft(draft, tour) {
+        const source = draft && typeof draft === 'object' ? draft : {};
+        const listingId = String(source.tourListingId || (tour && tour.id) || '').trim();
+        const normalizedDraftTitle = String((tour && tour.title) || source.title || '').trim().toLowerCase();
+        const normalizedDraftLocation = String((tour && tour.location) || source.location || '').trim().toLowerCase();
+        const legacyKey = String(
+            source.tourLegacyKey
+            || source.tourSlug
+            || (source.tourId && !/^\d+$/.test(String(source.tourId)) ? source.tourId : '')
+            || (tour && (tour.legacyKey || tour.slug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '')))
+            || ''
+        ).trim().toLowerCase();
+
+        const resolveListingId = function () {
+            if (/^\d+$/.test(listingId)) {
+                return Promise.resolve(Number(listingId));
+            }
+
+            return apiRequest('/tourist/tours/feed').then(function (data) {
+                const tours = data && Array.isArray(data.tours) ? data.tours : [];
+                const match = tours.find(function (item) {
+                    const itemId = String(item && item.id ? item.id : '').trim().toLowerCase();
+                    const slug = String(item && item.slug ? item.slug : '').trim().toLowerCase();
+                    const itemLegacy = String(item && item.legacyKey ? item.legacyKey : '').trim().toLowerCase();
+                    if (legacyKey && (legacyKey === itemId || legacyKey === slug || legacyKey === itemLegacy)) {
+                        return true;
+                    }
+
+                    const title = String(item && item.title ? item.title : '').trim().toLowerCase();
+                    const location = String(item && item.location ? item.location : '').trim().toLowerCase();
+                    if (!title || !normalizedDraftTitle || title !== normalizedDraftTitle) {
+                        return false;
+                    }
+
+                    if (!normalizedDraftLocation || !location) {
+                        return true;
+                    }
+
+                    return location === normalizedDraftLocation
+                        || location.indexOf(normalizedDraftLocation) !== -1
+                        || normalizedDraftLocation.indexOf(location) !== -1;
+                });
+
+                if (!match || !/^\d+$/.test(String(match.id || ''))) {
+                    throw new Error('This listing is unavailable for direct booking. Please select a published guide listing.');
+                }
+
+                return Number(match.id);
+            });
+        };
+
+        const paymentMethod = String(source.paymentMethod || '').trim();
+        const paymentStatus = paymentMethod === 'Pay on meetup' || paymentMethod === 'Pay at tour location'
+            ? 'unpaid'
+            : 'paid';
+        return resolveListingId().then(function (resolvedListingId) {
+            const payload = {
+                tour_listing_id: resolvedListingId,
+                booked_for_date: source.date || null,
+                booked_for_time: source.time || null,
+                guest_count: Math.max(1, Number(source.guests || 1)),
+                notes: source.traveler && source.traveler.notes ? String(source.traveler.notes) : null,
+                payment_method: paymentMethod || null,
+                payment_status: paymentStatus,
+                payment_reference: source.reference || null,
+                client_token: source.bookingToken || null,
+            };
+
+            return apiRequest('/tourist/bookings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify(payload)
+            });
+        });
+    }
+
     function getTourById(id) {
         const fallback = TOUR_CATALOG.bohol;
         const guideTours = getGuideToursCatalog();
-        const picked = TOUR_CATALOG[id] || guideTours[id] || fallback;
+        const key = String(id || '').trim();
+        let picked = TOUR_CATALOG[key] || guideTours[key] || null;
+
+        if (!picked && key) {
+            const lowered = key.toLowerCase();
+            picked = Object.values(guideTours).find(function (item) {
+                if (!item || typeof item !== 'object') {
+                    return false;
+                }
+                const slug = String(item.slug || '').trim().toLowerCase();
+                const legacy = String(item.legacyKey || '').trim().toLowerCase();
+                return lowered === slug || lowered === legacy;
+            }) || null;
+        }
+
+        picked = picked || fallback;
         const overrides = getTourOverrides();
         const merged = normalizeTourData(picked, overrides[picked.id] || {});
         return Object.assign({
@@ -2800,6 +3254,10 @@
                 const guests = Number(guestInput ? guestInput.value : 1) || 1;
                 const draft = {
                     tourId: tour.id,
+                    tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null,
+                    tourSlug: String(tour.slug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
+                    title: tour.title,
+                    location: tour.location,
                     guests: guests,
                     date: dateInput.value,
                     time: timeInput ? timeInput.value : '09:00 AM',
@@ -2816,6 +3274,10 @@
                 const selectedDate = dateInput && dateInput.value ? dateInput.value : today;
                 const draft = {
                     tourId: tour.id,
+                    tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null,
+                    tourSlug: String(tour.slug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
+                    title: tour.title,
+                    location: tour.location,
                     guests: guests,
                     date: selectedDate,
                     time: timeInput ? timeInput.value : '09:00 AM',
@@ -2841,7 +3303,13 @@
         const form = qs('#bookingDetailsForm');
         const today = new Date().toISOString().split('T')[0];
 
-        setBookingDraft(Object.assign({}, stored, { tourId: tour.id }));
+        setBookingDraft(Object.assign({}, stored, {
+            tourId: tour.id,
+            tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : (stored.tourListingId || null),
+            tourSlug: String(tour.slug || stored.tourSlug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
+            title: tour.title,
+            location: tour.location
+        }));
         qs('[data-booking-tour-title]').textContent = tour.title;
         qs('[data-booking-tour-location]').textContent = tour.location;
         qs('[data-booking-tour-price]').textContent = formatPeso(tour.price);
@@ -2942,6 +3410,10 @@
                 continueBtn.disabled = true;
                 const bookingToken = draft.bookingToken || ('bk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7));
                 setBookingDraft(Object.assign({}, draft, {
+                    tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null,
+                    tourSlug: String(tour.slug || draft.tourSlug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
+                    title: tour.title,
+                    location: tour.location,
                     paymentMethod: selected,
                     bookingToken: bookingToken,
                     paymentStatus: 'pending'
@@ -2967,18 +3439,14 @@
             return;
         }
 
-        const existingHistory = getBookingHistory();
-        const existingBooking = existingHistory.find(function (entry) {
-            return entry.bookingToken && draft.bookingToken && entry.bookingToken === draft.bookingToken;
-        });
-        if (existingBooking) {
-            setBookingDraft(existingBooking);
-            window.location.href = '/booking/confirmation';
-            return;
+        const tour = getTourById(draft.tourId);
+        const bookingToken = draft.bookingToken || ('bk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7));
+        if (!draft.bookingToken) {
+            setBookingDraft(Object.assign({}, draft, { bookingToken: bookingToken }));
         }
 
         localStorage.setItem(BOOKING_PROCESSING_LOCK_KEY, JSON.stringify({
-            token: draft.bookingToken || '',
+            token: bookingToken,
             startedAt: Date.now()
         }));
 
@@ -2989,6 +3457,7 @@
         const shouldFail = params.get('status') === 'fail';
         let progress = 8;
         let running = true;
+        let persisted = false;
 
         const timer = setInterval(function () {
             if (!running) {
@@ -3018,26 +3487,47 @@
             }
             if (progress >= 100) {
                 running = false;
-                const latestDraft = getBookingDraft() || draft;
-                const reference = 'TRBL-' + Math.random().toString(36).slice(2, 8).toUpperCase() + '-' + Date.now().toString().slice(-4);
-                const complete = Object.assign({}, latestDraft, {
-                    reference: reference,
-                    bookedAt: new Date().toISOString(),
-                    paymentStatus: 'paid'
-                });
-                setBookingDraft(complete);
-                const history = getBookingHistory();
-                const duplicate = history.find(function (entry) {
-                    return entry.bookingToken && complete.bookingToken && entry.bookingToken === complete.bookingToken;
-                });
-                if (!duplicate) {
-                    history.unshift(complete);
+                if (statusLabel) {
+                    statusLabel.textContent = 'Finalizing booking in database...';
                 }
-                setBookingHistory(history);
-                localStorage.removeItem(BOOKING_PROCESSING_LOCK_KEY);
-                setTimeout(function () {
-                    window.location.href = '/booking/confirmation';
-                }, 700);
+
+                const latestDraft = getBookingDraft() || draft;
+                createBookingFromDraft(Object.assign({}, latestDraft, {
+                    bookingToken: bookingToken
+                }), tour).then(function (data) {
+                    const booking = data && data.booking ? data.booking : null;
+                    if (!booking || !booking.id) {
+                        throw new Error('Booking was processed but no booking record was returned.');
+                    }
+
+                    const complete = Object.assign({}, latestDraft, {
+                        bookingToken: bookingToken,
+                        bookingId: booking.id,
+                        reference: booking.reference || latestDraft.reference,
+                        bookedAt: booking.createdAt || new Date().toISOString(),
+                        paymentStatus: booking.paymentStatus || latestDraft.paymentStatus || 'paid',
+                        paymentMethod: booking.paymentMethod || latestDraft.paymentMethod || '',
+                        tourListingId: booking.tourId || latestDraft.tourListingId || latestDraft.tourId
+                    });
+                    setBookingDraft(complete);
+                    persisted = true;
+                    localStorage.removeItem(BOOKING_PROCESSING_LOCK_KEY);
+                    setTimeout(function () {
+                        window.location.href = '/booking/confirmation';
+                    }, 500);
+                }).catch(function (error) {
+                    localStorage.removeItem(BOOKING_PROCESSING_LOCK_KEY);
+                    if (statusLabel) {
+                        statusLabel.textContent = error && error.message
+                            ? error.message
+                            : 'Unable to save booking right now. Please retry payment processing.';
+                        statusLabel.classList.add('text-danger');
+                    }
+                    if (retryBtn) {
+                        retryBtn.textContent = 'Retry Save';
+                    }
+                    showToast(error && error.message ? error.message : 'Unable to save booking.', 'danger');
+                });
             }
         }, 420);
 
@@ -3049,6 +3539,10 @@
                     return;
                 }
                 if (!running) {
+                    if (persisted) {
+                        window.location.href = '/booking/confirmation';
+                        return;
+                    }
                     localStorage.removeItem(BOOKING_PROCESSING_LOCK_KEY);
                     window.location.reload();
                 }
@@ -3377,10 +3871,60 @@
         const avatarInput = qs('#avatarInput');
         const avatarPreview = qs('#avatarPreview');
         const profileForm = qs('#profileForm');
+        const nameInput = qs('#nameInput');
+        const emailInput = qs('#emailInput');
+        const phoneInput = qs('#phoneInput');
+        const bioInput = qs('#bioInput');
         const passwordForm = qs('#passwordForm');
         const prefsForm = qs('#prefsForm');
+        const oldPass = qs('#oldPass');
+        const newPass = qs('#newPass');
+        const confirmPass = qs('#confirmPass');
+        const notif1 = qs('#notif1');
+        const notif2 = qs('#notif2');
+        const notif3 = qs('#notif3');
         const params = new URLSearchParams(window.location.search);
         const sectionFromRoute = params.get('section');
+
+        function applyAccountData(snapshot) {
+            const account = snapshot && snapshot.account ? snapshot.account : {};
+            const preferences = snapshot && snapshot.preferences ? snapshot.preferences : {};
+
+            if (nameInput) {
+                nameInput.value = account.name || '';
+            }
+            if (emailInput) {
+                emailInput.value = account.email || '';
+            }
+            if (phoneInput) {
+                phoneInput.value = account.phone || '';
+            }
+            if (bioInput) {
+                bioInput.value = account.bio || '';
+            }
+            if (avatarPreview && account.avatar) {
+                avatarPreview.src = account.avatar;
+            }
+
+            const selectedInterests = Array.isArray(preferences.interests) ? preferences.interests.map(function (item) {
+                return String(item || '').trim().toLowerCase();
+            }) : [];
+
+            qsa('input[name="interest_preferences[]"]', prefsForm || document).forEach(function (checkbox) {
+                const value = String(checkbox.value || '').trim().toLowerCase();
+                checkbox.checked = selectedInterests.includes(value);
+            });
+
+            if (notif1) {
+                notif1.checked = Boolean(preferences.notify_booking_updates);
+            }
+            if (notif2) {
+                notif2.checked = Boolean(preferences.notify_messages);
+            }
+            if (notif3) {
+                notif3.checked = Boolean(preferences.notify_weekly_suggestions);
+            }
+        }
 
         if (avatarInput && avatarPreview) {
             avatarInput.addEventListener('change', function () {
@@ -3396,20 +3940,152 @@
             });
         }
 
-        [profileForm, passwordForm, prefsForm].forEach(function (form) {
-            if (!form) {
-                return;
-            }
-            form.addEventListener('submit', function (event) {
+        qsa('[data-toggle-password]').forEach(function (toggleButton) {
+            toggleButton.addEventListener('click', function () {
+                const targetSelector = toggleButton.dataset.togglePassword || '';
+                const targetInput = qs(targetSelector);
+                if (!targetInput) {
+                    return;
+                }
+                const nextType = targetInput.type === 'password' ? 'text' : 'password';
+                targetInput.type = nextType;
+                const icon = qs('i', toggleButton);
+                if (icon) {
+                    icon.classList.toggle('fa-eye', nextType === 'password');
+                    icon.classList.toggle('fa-eye-slash', nextType === 'text');
+                }
+            });
+        });
+
+        if (profileForm) {
+            profileForm.addEventListener('submit', function (event) {
                 event.preventDefault();
-                const button = qs('button[type="submit"]', form);
+                const button = qs('button[type="submit"]', profileForm);
                 setButtonLoading(button, true);
-                fakeAjax({}, 900).then(function () {
+
+                const formData = new FormData();
+                formData.append('name', nameInput ? nameInput.value.trim() : '');
+                formData.append('email', emailInput ? emailInput.value.trim() : '');
+                formData.append('phone', phoneInput ? phoneInput.value.trim() : '');
+                formData.append('bio', bioInput ? bioInput.value.trim() : '');
+                if (avatarInput && avatarInput.files && avatarInput.files[0]) {
+                    formData.append('avatar', avatarInput.files[0]);
+                }
+
+                apiRequest('/tourist/account/profile', {
+                    method: 'PATCH',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': getCsrfToken()
+                    },
+                    body: formData
+                }).then(function (data) {
+                    const next = Object.assign({}, getCachedAccountData() || {}, {
+                        account: data && data.account ? data.account : {},
+                    });
+                    setCachedAccountData(next);
+                    applyAccountData(next);
+                    if (avatarInput) {
+                        avatarInput.value = '';
+                    }
                     showToast('Profile updated successfully.', 'success');
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to update profile.', 'danger');
                 }).finally(function () {
                     setButtonLoading(button, false);
                 });
             });
+        }
+
+        if (passwordForm) {
+            passwordForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                const currentPassword = oldPass ? oldPass.value : '';
+                const nextPassword = newPass ? newPass.value : '';
+                const confirmPassword = confirmPass ? confirmPass.value : '';
+
+                if (nextPassword.length < 8) {
+                    showToast('New password must be at least 8 characters.', 'warning');
+                    return;
+                }
+                if (nextPassword !== confirmPassword) {
+                    showToast('Password confirmation does not match.', 'warning');
+                    return;
+                }
+
+                const button = qs('button[type="submit"]', passwordForm);
+                setButtonLoading(button, true);
+
+                apiRequest('/tourist/account/password', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        password: nextPassword,
+                        password_confirmation: confirmPassword
+                    })
+                }).then(function () {
+                    passwordForm.reset();
+                    showToast('Password updated successfully.', 'success');
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to update password.', 'danger');
+                }).finally(function () {
+                    setButtonLoading(button, false);
+                });
+            });
+        }
+
+        if (prefsForm) {
+            prefsForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                const selectedInterests = qsa('input[name="interest_preferences[]"]:checked', prefsForm).map(function (item) {
+                    return String(item.value || '').trim();
+                }).filter(Boolean);
+
+                const button = qs('button[type="submit"]', prefsForm);
+                setButtonLoading(button, true);
+
+                apiRequest('/tourist/account/preferences', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        interests: selectedInterests,
+                        notify_booking_updates: Boolean(notif1 && notif1.checked),
+                        notify_messages: Boolean(notif2 && notif2.checked),
+                        notify_weekly_suggestions: Boolean(notif3 && notif3.checked)
+                    })
+                }).then(function (data) {
+                    const next = Object.assign({}, getCachedAccountData() || {}, {
+                        preferences: data && data.preferences ? data.preferences : {},
+                    });
+                    setCachedAccountData(next);
+                    showToast('Preferences saved successfully.', 'success');
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to save preferences.', 'danger');
+                }).finally(function () {
+                    setButtonLoading(button, false);
+                });
+            });
+        }
+
+        const cached = getCachedAccountData();
+        if (cached) {
+            applyAccountData(cached);
+        }
+        syncAccountFromApi().then(function (data) {
+            applyAccountData(data || {});
+        }).catch(function () {
+            return null;
         });
 
         if (sectionFromRoute === 'preferences' && prefsForm) {
@@ -3427,34 +4103,46 @@
         const accountRole = qs('#accountRoleValue');
         const accountJoinedDate = qs('#accountJoinedDateValue');
         const accountStatus = qs('#accountStatusValue');
+        const emailNotificationsToggle = qs('#settingEmailNotifications');
+        const privateProfileToggle = qs('#settingPrivateProfile');
+
+        function applyAccountInfo(data) {
+            const account = data && data.account ? data.account : null;
+            const settings = data && data.settings ? data.settings : null;
+            if (!account) {
+                return;
+            }
+
+            if (accountName) {
+                accountName.textContent = account.name || 'Tourist';
+            }
+            if (accountEmail) {
+                accountEmail.textContent = account.email || '-';
+            }
+            if (accountRole) {
+                accountRole.textContent = account.role || 'tourist';
+            }
+            if (accountJoinedDate) {
+                accountJoinedDate.textContent = account.joinedDate || '-';
+            }
+            if (accountStatus) {
+                accountStatus.textContent = account.status || 'Active';
+                accountStatus.classList.toggle('text-success', String(account.status || '').toLowerCase() === 'active');
+            }
+
+            if (settings) {
+                if (emailNotificationsToggle) {
+                    emailNotificationsToggle.checked = Boolean(settings.email_notifications);
+                }
+                if (privateProfileToggle) {
+                    privateProfileToggle.checked = Boolean(settings.private_profile);
+                }
+            }
+        }
 
         function refreshAccountInfo() {
-            return apiRequest('/tourist/account/profile').then(function (data) {
-                const account = data && data.account ? data.account : null;
-                if (!account) {
-                    return;
-                }
-
-                if (accountName) {
-                    accountName.textContent = account.name || 'Tourist';
-                }
-                if (accountEmail) {
-                    accountEmail.textContent = account.email || '-';
-                }
-                if (accountRole) {
-                    accountRole.textContent = account.role || 'tourist';
-                }
-                if (accountJoinedDate) {
-                    accountJoinedDate.textContent = account.joinedDate || '-';
-                }
-                if (accountStatus) {
-                    accountStatus.textContent = account.status || 'Active';
-                    accountStatus.classList.toggle('text-success', String(account.status || '').toLowerCase() === 'active');
-                }
-
-                if (data.pusher && !window.TRBL_PUSHER) {
-                    window.TRBL_PUSHER = data.pusher;
-                }
+            return syncAccountFromApi().then(function (data) {
+                applyAccountInfo(data || {});
             }).catch(function () {
                 return null;
             });
@@ -3465,8 +4153,25 @@
                 event.preventDefault();
                 const button = qs('button[type="submit"]', form);
                 setButtonLoading(button, true);
-                fakeAjax({}, 900).then(function () {
+                apiRequest('/tourist/account/settings', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        email_notifications: Boolean(emailNotificationsToggle && emailNotificationsToggle.checked),
+                        private_profile: Boolean(privateProfileToggle && privateProfileToggle.checked)
+                    })
+                }).then(function (data) {
+                    const next = Object.assign({}, getCachedAccountData() || {}, {
+                        settings: data && data.settings ? data.settings : {},
+                    });
+                    setCachedAccountData(next);
                     showToast('Settings saved.', 'success');
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to save settings.', 'danger');
                 }).finally(function () {
                     setButtonLoading(button, false);
                 });
@@ -3479,6 +4184,10 @@
             });
         }
 
+        const cached = getCachedAccountData();
+        if (cached) {
+            applyAccountInfo(cached);
+        }
         refreshAccountInfo();
         window.setInterval(refreshAccountInfo, 30000);
     }

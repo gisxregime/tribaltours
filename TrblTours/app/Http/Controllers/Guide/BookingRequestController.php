@@ -94,6 +94,9 @@ class BookingRequestController extends Controller
         if ($payload['status'] === 'declined') {
             $payload['declined_at'] = now();
         }
+        if ($payload['status'] === 'cancelled') {
+            $payload['cancelled_at'] = now();
+        }
         if ($payload['status'] === 'completed') {
             $payload['completed_at'] = now();
         }
@@ -102,9 +105,18 @@ class BookingRequestController extends Controller
 
         $booking->loadMissing(['tourist', 'tourListing']);
         $tourTitle = trim((string) ($booking->tourListing?->title ?? 'your booking'));
+        $status = strtolower((string) $booking->status);
+        $notificationType = match ($status) {
+            'accepted', 'confirmed' => 'booking.accepted',
+            'declined' => 'booking.rejected',
+            'cancelled' => 'booking.cancelled',
+            'completed' => 'booking.completed',
+            default => 'booking.updated',
+        };
+
         DomainNotification::notifyUser(
             $booking->tourist,
-            'booking.updated',
+            $notificationType,
             'Your booking status changed to ' . strtoupper((string) $booking->status) . ' for ' . $tourTitle . '.',
             [
                 'bookingId' => (string) $booking->id,

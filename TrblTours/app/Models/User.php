@@ -28,6 +28,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'location',
         'avatar_path',
         'bio',
+        'account_preferences',
+        'account_settings',
         'onboarding_step',
         'is_profile_completed',
         'guide_verification_status',
@@ -59,6 +61,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'guide_verified_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'is_profile_completed' => 'boolean',
+            'account_preferences' => 'array',
+            'account_settings' => 'array',
             'password' => 'hashed',
         ];
     }

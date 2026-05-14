@@ -84,55 +84,10 @@
                     <button class="tab-btn active" data-tab="pending" type="button">Pending</button>
                     <button class="tab-btn" data-tab="booked" type="button">Booked</button>
                     <button class="tab-btn" data-tab="completed" type="button">Completed</button>
+                    <button class="tab-btn" data-tab="cancelled" type="button">Cancelled</button>
                 </section>
 
-                <section class="bookings-grid">
-                    <article class="booking-card" data-state="pending" data-booking-id="bk1">
-                        <img class="media" src="https://images.unsplash.com/photo-1470004914212-05527e49370b?auto=format&fit=crop&w=1200&q=80" alt="Bohol Booking">
-                        <div class="booking-body">
-                            <h2 class="h6">Chocolate Hills & Tarsier Sanctuary</h2>
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">
-                                <small>Guide: Juan dela Cruz</small>
-                            </div>
-                            <p class="small text-muted mb-2">Booking Date: May 22, 2026</p>
-                            <p class="small mb-2">Amount: <strong>PHP 2,500</strong></p>
-                            <span class="status-pill">Pending Confirmation</span>
-                            <button class="btn-danger w-100 mt-3" data-cancel-booking><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>
-                        </div>
-                    </article>
-
-                    <article class="booking-card" data-state="pending" data-booking-id="bk2">
-                        <img class="media" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80" alt="Siargao Booking">
-                        <div class="booking-body">
-                            <h2 class="h6">Surf Lessons & Cloud 9 Waves</h2>
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <img src="https://images.unsplash.com/photo-1541534401786-2077eed87a72?auto=format&fit=crop&w=120&q=80" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">
-                                <small>Guide: Ana Villanueva</small>
-                            </div>
-                            <p class="small text-muted mb-2">Booking Date: Jun 03, 2026</p>
-                            <p class="small mb-2">Amount: <strong>PHP 2,200</strong></p>
-                            <span class="status-pill">Pending Confirmation</span>
-                            <button class="btn-danger w-100 mt-3" data-cancel-booking><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>
-                        </div>
-                    </article>
-
-                    <article class="booking-card" data-state="completed" data-booking-id="bk3">
-                        <img class="media" src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80" alt="Mt Apo Booking">
-                        <div class="booking-body">
-                            <h2 class="h6">Mount Apo Summit Trek</h2>
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <img src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=120&q=80" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">
-                                <small>Guide: Roberto Lim</small>
-                            </div>
-                            <p class="small text-muted mb-2">Booking Date: May 08, 2026</p>
-                            <p class="small mb-2">Amount: <strong>PHP 8,500</strong></p>
-                            <span class="status-pill completed">Completed</span>
-                            <p class="small mt-2 text-muted" data-review-result>No review yet</p>
-                            <button class="btn-gold w-100 mt-2" data-rate-booking="bk3"><i class="fa-regular fa-star me-1"></i>Rate Trip</button>
-                        </div>
-                    </article>
-                </section>
+                <section class="bookings-grid"></section>
 
                 <section id="bookingEmptyState" class="empty-state mt-3" style="display:none;">
                     <h3 class="h5 mt-2">No bookings in this tab</h3>
@@ -166,6 +121,25 @@
                         <button class="btn-gold" type="submit"><i class="fa-solid fa-paper-plane me-2"></i>Submit Review</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="bookingCancelModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 mb-0">Cancel Booking</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Are you sure you want to cancel this booking?</p>
+                    <p class="small text-muted mb-0">This action is permanent and can only be done within 24 hours of booking.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Keep Booking</button>
+                    <button id="confirmCancelBookingBtn" class="btn-danger" type="button"><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>
+                </div>
             </div>
         </div>
     </div>

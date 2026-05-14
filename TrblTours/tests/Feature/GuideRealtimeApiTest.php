@@ -125,7 +125,7 @@ class GuideRealtimeApiTest extends TestCase
 
         $touristNotification = $tourist->notifications()->latest()->first();
         $this->assertNotNull($touristNotification);
-        $this->assertSame('booking.updated', $touristNotification->type);
+        $this->assertSame('booking.accepted', $touristNotification->type);
     }
 
     private function createGuideAndTourist(): array

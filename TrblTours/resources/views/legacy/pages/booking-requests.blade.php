@@ -82,6 +82,7 @@
                     <button class="tab-btn" type="button" data-booking-filter="All">All</button>
                     <button class="tab-btn" type="button" data-booking-filter="Pending">Pending</button>
                     <button class="tab-btn" type="button" data-booking-filter="Accepted">Accepted</button>
+                    <button class="tab-btn" type="button" data-booking-filter="Completed">Completed</button>
                     <button class="tab-btn" type="button" data-booking-filter="Declined">Declined</button>
                     <button class="tab-btn" type="button" data-booking-filter="Cancelled">Cancelled</button>
                 </section>

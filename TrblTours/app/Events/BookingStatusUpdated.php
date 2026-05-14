@@ -24,8 +24,14 @@ class BookingStatusUpdated implements ShouldBroadcastNow
         $state = match ($booking->status) {
             'accepted', 'confirmed' => 'booked',
             'completed' => 'completed',
+            'cancelled', 'declined' => 'cancelled',
             default => 'pending',
         };
+
+        $cancellableUntil = optional($booking->created_at)->copy()?->addDay();
+        $secondsLeft = $cancellableUntil
+            ? max(0, now()->diffInSeconds($cancellableUntil, false))
+            : 0;
 
         $this->bookingPayload = [
             'id' => (string) $booking->id,
@@ -39,8 +45,12 @@ class BookingStatusUpdated implements ShouldBroadcastNow
             'guideAvatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
             'bookingDate' => optional($booking->booked_for_date)->toDateString(),
             'total' => (float) ($booking->total_amount ?? 0),
+            'paymentStatus' => (string) ($booking->payment_status ?? 'unpaid'),
+            'paymentMethod' => (string) ($booking->payment_method ?? ''),
             'status' => (string) $booking->status,
             'state' => $state,
+            'cancellableUntil' => $cancellableUntil?->toISOString(),
+            'cancellationSecondsLeft' => $secondsLeft,
             'updatedAt' => optional($booking->updated_at)->toISOString(),
         ];
     }

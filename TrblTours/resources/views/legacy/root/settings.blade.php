@@ -93,7 +93,7 @@
                                     <strong>Email Notifications</strong>
                                     <div class="small text-muted">Get updates for bookings, offers, and messages.</div>
                                 </div>
-                                <div class="form-check form-switch"><input class="form-check-input" checked type="checkbox"></div>
+                                <div class="form-check form-switch"><input id="settingEmailNotifications" class="form-check-input" checked type="checkbox"></div>
                             </div>
 
                             <div class="setting-row">
@@ -101,7 +101,7 @@
                                     <strong>Privacy Settings</strong>
                                     <div class="small text-muted">Hide profile details from public guide listings.</div>
                                 </div>
-                                <div class="form-check form-switch"><input class="form-check-input" type="checkbox"></div>
+                                <div class="form-check form-switch"><input id="settingPrivateProfile" class="form-check-input" type="checkbox"></div>
                             </div>
 
                             <div class="setting-row">
@@ -118,10 +118,10 @@
 
                     <article class="settings-card account-card">
                         <h2 class="h5 mb-3">Account Information</h2>
-                        <div class="setting-row"><span class="text-muted">Name</span><strong id="accountNameValue">Lara Dela Torre</strong></div>
-                        <div class="setting-row"><span class="text-muted">Email</span><strong id="accountEmailValue">lara@trbltours.com</strong></div>
-                        <div class="setting-row"><span class="text-muted">Role</span><strong id="accountRoleValue">Tourist</strong></div>
-                        <div class="setting-row"><span class="text-muted">Joined Date</span><strong id="accountJoinedDateValue">March 14, 2025</strong></div>
+                        <div class="setting-row"><span class="text-muted">Name</span><strong id="accountNameValue">{{ auth()->user()?->name ?? 'Tourist' }}</strong></div>
+                        <div class="setting-row"><span class="text-muted">Email</span><strong id="accountEmailValue">{{ auth()->user()?->email ?? '-' }}</strong></div>
+                        <div class="setting-row"><span class="text-muted">Role</span><strong id="accountRoleValue">{{ ucfirst(auth()->user()?->role ?? 'tourist') }}</strong></div>
+                        <div class="setting-row"><span class="text-muted">Joined Date</span><strong id="accountJoinedDateValue">{{ optional(auth()->user()?->created_at)->format('F d, Y') ?? '-' }}</strong></div>
                         <div class="setting-row"><span class="text-muted">Status</span><strong id="accountStatusValue" class="text-success">Active</strong></div>
                         <br>
                     </article>

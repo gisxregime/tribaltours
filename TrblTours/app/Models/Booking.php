@@ -13,6 +13,7 @@ class Booking extends Model
 
     protected $fillable = [
         'booking_reference',
+        'client_token',
         'tourist_id',
         'guide_id',
         'tour_listing_id',
@@ -23,11 +24,15 @@ class Booking extends Model
         'price_snapshot',
         'total_amount',
         'payment_status',
+        'payment_method',
+        'payment_reference',
         'status',
         'reservation_type',
         'notes',
+        'paid_at',
         'approved_at',
         'declined_at',
+        'cancelled_at',
         'completed_at',
     ];
 
@@ -37,8 +42,10 @@ class Booking extends Model
             'booked_for_date' => 'date',
             'price_snapshot' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'paid_at' => 'datetime',
             'approved_at' => 'datetime',
             'declined_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }

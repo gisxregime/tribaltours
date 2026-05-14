@@ -28,12 +28,22 @@ class TourRequestController extends Controller
 
         return view('legacy.root.my-posts', [
             'requests' => $requests,
+            'stats' => $this->buildRequestStats($request->user()),
         ]);
     }
 
     public function create(): View
     {
-        return view('legacy.root.my-posts');
+        $user = request()->user();
+
+        return view('legacy.root.my-posts', [
+            'stats' => $user ? $this->buildRequestStats($user) : [
+                'total_requests' => 0,
+                'open_requests' => 0,
+                'selected_guides' => 0,
+                'completed' => 0,
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse|RedirectResponse
@@ -141,12 +151,13 @@ class TourRequestController extends Controller
         return response()->json([
             'ok' => true,
             'requests' => $requests,
+            'stats' => $this->buildRequestStats($request->user()),
         ]);
     }
 
     public function addComment(Request $request, TourRequest $tourRequest): JsonResponse
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
         $payload = $request->validate([
             'text' => ['required', 'string', 'max:2000'],
@@ -202,7 +213,7 @@ class TourRequestController extends Controller
 
     public function selectGuide(Request $request, TourRequest $tourRequest): JsonResponse
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
         $payload = $request->validate([
             'guide_id' => ['required', 'exists:users,id'],
@@ -314,7 +325,7 @@ class TourRequestController extends Controller
 
     public function show(TourRequest $tourRequest): View
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
         return view('legacy.root.my-posts', [
             'tourRequest' => $tourRequest,
@@ -323,41 +334,66 @@ class TourRequestController extends Controller
 
     public function edit(TourRequest $tourRequest): View
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
         return view('legacy.root.my-posts', [
             'tourRequest' => $tourRequest,
         ]);
     }
 
-    public function update(Request $request, TourRequest $tourRequest): RedirectResponse
+    public function update(Request $request, TourRequest $tourRequest): JsonResponse|RedirectResponse
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
-        $payload = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string'],
-            'province' => ['nullable', 'string', 'max:120'],
-            'city' => ['nullable', 'string', 'max:120'],
-            'budget_min' => ['nullable', 'numeric', 'min:0'],
-            'budget_max' => ['nullable', 'numeric', 'min:0'],
-            'duration_label' => ['nullable', 'string', 'max:120'],
-            'travelers_label' => ['nullable', 'string', 'max:120'],
-            'interests' => ['nullable', 'array'],
-            'status' => ['nullable', 'in:open,negotiating,closed,completed'],
-        ]);
+        $isJson = $request->expectsJson() || $request->wantsJson();
+
+        $rules = [
+            'title' => [$isJson ? 'sometimes' : 'required', 'string', 'max:255'],
+            'description' => [$isJson ? 'sometimes' : 'required', 'string'],
+            'province' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'budget_min' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'budget_max' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'duration_label' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'travelers_label' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'interests' => ['sometimes', 'nullable', 'array'],
+            'interests.*' => ['string', 'max:80'],
+            'status' => ['sometimes', 'nullable', 'in:open,negotiating,closed,completed'],
+        ];
+
+        $payload = $request->validate($rules);
+
+        if (array_key_exists('interests', $payload)) {
+            $payload['interests'] = array_values(array_unique(array_filter(array_map(function ($value) {
+                return trim((string) $value);
+            }, $payload['interests'] ?? []))));
+        }
 
         $tourRequest->update($payload);
 
-        event(new TourRequestUpdated($tourRequest->fresh(['tourist', 'selectedGuide'])));
+        $updatedRequest = $tourRequest->fresh(['tourist', 'selectedGuide']);
+        event(new TourRequestUpdated($updatedRequest));
+
+        if ($isJson) {
+            return response()->json([
+                'ok' => true,
+                'request' => $this->presentRequest($updatedRequest),
+            ]);
+        }
 
         return back()->with('status', 'Tour request updated.');
     }
 
-    public function destroy(TourRequest $tourRequest): RedirectResponse
+    public function destroy(Request $request, TourRequest $tourRequest): JsonResponse|RedirectResponse
     {
-        abort_unless($tourRequest->tourist_id === Auth::id(), 403);
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
         $tourRequest->delete();
+
+        if ($request->expectsJson() || $request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+            ]);
+        }
 
         return back()->with('status', 'Tour request removed.');
     }
@@ -396,7 +432,7 @@ class TourRequestController extends Controller
         return [
             'id' => (string) $tourRequest->id,
             'touristName' => trim((string) ($tourist->name ?? 'Tourist')),
-            'touristAvatar' => 'images/manila.jpg',
+            'touristAvatar' => $this->resolveAvatarPath($tourist?->avatar_path, '/images/manila.jpg'),
             'title' => (string) $tourRequest->title,
             'description' => (string) ($tourRequest->description ?? ''),
             'location' => $locationBits ? implode(', ', $locationBits) : 'Philippines',
@@ -414,5 +450,50 @@ class TourRequestController extends Controller
             'createdAt' => optional($tourRequest->created_at)->toISOString(),
             'updatedAt' => optional($tourRequest->updated_at)->toISOString(),
         ];
+    }
+
+    private function buildRequestStats(User $tourist): array
+    {
+        $openStatuses = ['open', 'negotiating'];
+
+        $totalRequests = TourRequest::query()
+            ->where('tourist_id', $tourist->id)
+            ->count();
+
+        $openRequests = TourRequest::query()
+            ->where('tourist_id', $tourist->id)
+            ->whereIn('status', $openStatuses)
+            ->count();
+
+        $selectedGuides = TourRequest::query()
+            ->where('tourist_id', $tourist->id)
+            ->whereNotNull('selected_guide_id')
+            ->count();
+
+        $completedBookings = Booking::query()
+            ->where('tourist_id', $tourist->id)
+            ->where('status', 'completed')
+            ->count();
+
+        return [
+            'total_requests' => $totalRequests,
+            'open_requests' => $openRequests,
+            'selected_guides' => $selectedGuides,
+            'completed' => $completedBookings,
+        ];
+    }
+
+    private function resolveAvatarPath(?string $path, string $fallback = '/images/manila.jpg'): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return $fallback;
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }

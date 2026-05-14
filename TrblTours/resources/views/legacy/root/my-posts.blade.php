@@ -80,10 +80,10 @@
                 </section>
 
                 <section class="stats-row">
-                    <article class="stat-card"><p class="text-muted small">Total Requests</p><p class="value">5</p></article>
-                    <article class="stat-card"><p class="text-muted small">Open</p><p class="value" style="color:#1f5fa6;">2</p></article>
-                    <article class="stat-card"><p class="text-muted small">Selected Guides</p><p class="value" style="color:#8f6512;">1</p></article>
-                    <article class="stat-card"><p class="text-muted small">Completed</p><p class="value" style="color:#477131;">2</p></article>
+                    <article class="stat-card"><p class="text-muted small">Total Requests</p><p id="statTotalRequests" class="value" data-request-stats="total_requests">{{ (int) data_get($stats ?? [], 'total_requests', 0) }}</p></article>
+                    <article class="stat-card"><p class="text-muted small">Open</p><p id="statOpenRequests" class="value" style="color:#1f5fa6;" data-request-stats="open_requests">{{ (int) data_get($stats ?? [], 'open_requests', 0) }}</p></article>
+                    <article class="stat-card"><p class="text-muted small">Selected Guides</p><p id="statSelectedGuides" class="value" style="color:#8f6512;" data-request-stats="selected_guides">{{ (int) data_get($stats ?? [], 'selected_guides', 0) }}</p></article>
+                    <article class="stat-card"><p class="text-muted small">Completed</p><p id="statCompletedTours" class="value" style="color:#477131;" data-request-stats="completed">{{ (int) data_get($stats ?? [], 'completed', 0) }}</p></article>
                 </section>
 
                 <section class="request-manage-grid">

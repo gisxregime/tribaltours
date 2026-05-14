@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('tourist.')->group(function () {
     Route::get('account/profile', [AccountController::class, 'show'])->name('account.profile');
+    Route::patch('account/profile', [AccountController::class, 'updateProfile'])->name('account.profile.update');
+    Route::patch('account/password', [AccountController::class, 'updatePassword'])->name('account.password.update');
+    Route::patch('account/preferences', [AccountController::class, 'updatePreferences'])->name('account.preferences.update');
+    Route::patch('account/settings', [AccountController::class, 'updateSettings'])->name('account.settings.update');
     Route::get('tours/feed', [TourListingFeedController::class, 'index'])->name('tours.feed');
     Route::get('tours/feed/{tourListing}', [TourListingFeedController::class, 'show'])->name('tours.feed.show');
 
@@ -27,7 +31,8 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('
     Route::post('requests/{tourRequest}/comment', [TourRequestController::class, 'addComment'])->name('requests.comment');
     Route::post('requests/{tourRequest}/select-guide', [TourRequestController::class, 'selectGuide'])->name('requests.select-guide');
     Route::get('requests/mine', [TourRequestController::class, 'mine'])->name('requests.mine');
-    Route::resource('requests', TourRequestController::class);
+    Route::resource('requests', TourRequestController::class)
+        ->parameters(['requests' => 'tourRequest']);
     Route::resource('bookings', BookingController::class);
     Route::resource('favorites', FavoriteController::class);
     Route::resource('messages', MessageController::class);

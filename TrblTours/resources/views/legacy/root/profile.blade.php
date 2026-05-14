@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>TrblTours Profile</title>
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,7 +88,7 @@
                     <article class="settings-card account-card">
                         <form id="profileForm">
                             <div class="avatar-upload">
-                                <img id="avatarPreview" src="{{ asset('images/13.jpg') }}" alt="Avatar">
+                                <img id="avatarPreview" src="{{ asset(auth()->user()?->avatar_path ?: 'images/13.jpg') }}" alt="Avatar">
                                 <div>
                                     <label class="field-label" for="avatarInput">Avatar Upload</label>
                                     <input id="avatarInput" class="form-control" type="file" accept="image/*">
@@ -95,8 +96,10 @@
                             </div>
 
                             <div class="row g-3">
-                                <div class="col-md-6"><label class="field-label" for="nameInput">Name</label><input id="nameInput" class="input-soft" value="Lara Dela Torre" required type="text"></div>
-                                <div class="col-md-6"><label class="field-label" for="emailInput">Email</label><input id="emailInput" class="input-soft" value="lara@trbltours.com" required type="email"></div>
+                                <div class="col-md-6"><label class="field-label" for="nameInput">Name</label><input id="nameInput" class="input-soft" value="{{ auth()->user()?->name ?? '' }}" required type="text"></div>
+                                <div class="col-md-6"><label class="field-label" for="emailInput">Email</label><input id="emailInput" class="input-soft" value="{{ auth()->user()?->email ?? '' }}" required type="email"></div>
+                                <div class="col-md-6"><label class="field-label" for="phoneInput">Phone</label><input id="phoneInput" class="input-soft" value="{{ auth()->user()?->phone ?? '' }}" type="text" placeholder="Optional"></div>
+                                <div class="col-md-6"><label class="field-label" for="bioInput">Bio</label><input id="bioInput" class="input-soft" value="{{ auth()->user()?->bio ?? '' }}" type="text" placeholder="Optional"></div>
                             </div>
                             <button class="btn-gold mt-3" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Profile</button>
                         </form>
@@ -106,9 +109,27 @@
                         <form id="passwordForm">
                             <h2 class="h6 mb-3">Password Change</h2>
                             <div class="row g-3">
-                                <div class="col-md-4"><label class="field-label" for="oldPass">Current</label><input id="oldPass" class="input-soft" required type="password"></div>
-                                <div class="col-md-4"><label class="field-label" for="newPass">New</label><input id="newPass" class="input-soft" required type="password"></div>
-                                <div class="col-md-4"><label class="field-label" for="confirmPass">Confirm</label><input id="confirmPass" class="input-soft" required type="password"></div>
+                                <div class="col-md-4">
+                                    <label class="field-label" for="oldPass">Current</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input id="oldPass" class="input-soft" required type="password" autocomplete="current-password">
+                                        <button class="btn-soft" type="button" data-toggle-password="#oldPass" aria-label="Toggle current password visibility"><i class="fa-regular fa-eye"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="field-label" for="newPass">New</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input id="newPass" class="input-soft" required type="password" autocomplete="new-password">
+                                        <button class="btn-soft" type="button" data-toggle-password="#newPass" aria-label="Toggle new password visibility"><i class="fa-regular fa-eye"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="field-label" for="confirmPass">Confirm</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input id="confirmPass" class="input-soft" required type="password" autocomplete="new-password">
+                                        <button class="btn-soft" type="button" data-toggle-password="#confirmPass" aria-label="Toggle confirm password visibility"><i class="fa-regular fa-eye"></i></button>
+                                    </div>
+                                </div>
                             </div>
                             <button class="btn-charcoal mt-3" type="submit"><i class="fa-solid fa-key me-2"></i>Update Password</button>
                         </form>
@@ -118,10 +139,10 @@
                         <form id="prefsForm">
                             <h2 class="h6 mb-3">Interests Preferences</h2>
                             <div class="d-flex flex-wrap gap-3">
-                                <label><input class="form-check-input me-1" checked type="checkbox">Trekking</label>
-                                <label><input class="form-check-input me-1" checked type="checkbox">Nature</label>
-                                <label><input class="form-check-input me-1" type="checkbox">Food Tours</label>
-                                <label><input class="form-check-input me-1" checked type="checkbox">Water Sports</label>
+                                <label><input class="form-check-input me-1" type="checkbox" name="interest_preferences[]" value="Trekking" id="interestTrekking">Trekking</label>
+                                <label><input class="form-check-input me-1" type="checkbox" name="interest_preferences[]" value="Nature" id="interestNature">Nature</label>
+                                <label><input class="form-check-input me-1" type="checkbox" name="interest_preferences[]" value="Food Tours" id="interestFoodTours">Food Tours</label>
+                                <label><input class="form-check-input me-1" type="checkbox" name="interest_preferences[]" value="Water Sports" id="interestWaterSports">Water Sports</label>
                             </div>
 
                             <h2 class="h6 mt-4 mb-3">Notification Toggles</h2>

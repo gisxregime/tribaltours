@@ -19,6 +19,12 @@ class TourListingUpdated implements ShouldBroadcastNow
     {
         $tourListing->loadMissing('guide');
         $guide = $tourListing->guide;
+        $publicReviews = $tourListing->reviews()->where('is_public', true);
+        $liveReviews = (int) $publicReviews->count();
+        $liveRating = $publicReviews->avg('rating');
+        $rating = $liveReviews > 0
+            ? round((float) ($liveRating ?? $tourListing->rating_avg ?? 0), 2)
+            : 0.0;
         $locationBits = array_filter([
             $tourListing->city,
             $tourListing->province,
@@ -40,11 +46,14 @@ class TourListingUpdated implements ShouldBroadcastNow
         $this->tourPayload = [
             'id' => (string) $tourListing->id,
             'action' => $action,
+            'slug' => (string) $tourListing->slug,
+            'legacyKey' => (string) $tourListing->slug,
+            'guideId' => $guide ? (string) $guide->id : '',
             'location' => $locationBits ? implode(', ', $locationBits) : 'Philippines',
             'title' => (string) $tourListing->title,
             'guide' => trim((string) ($guide->name ?? 'Guide')),
-            'rating' => (float) ($tourListing->rating_avg ?? 0),
-            'reviews' => (int) ($tourListing->reviews_count ?? 0),
+            'rating' => $rating,
+            'reviews' => $liveReviews,
             'duration' => (string) ($tourListing->duration_label ?: 'Flexible'),
             'pax' => (int) ($tourListing->min_guests ?? 1) . '-' . (int) ($tourListing->max_guests ?? 10) . ' pax',
             'difficulty' => (string) ($tourListing->difficulty ?: 'Moderate'),

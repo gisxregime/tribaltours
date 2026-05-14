@@ -959,7 +959,16 @@
         if (notification.type === 'message.received') {
             return '/guide/messages?conversation=' + encodeURIComponent(payload.conversationId || '');
         }
-        if (notification.type === 'booking-request' || notification.type === 'booking.requested' || notification.type === 'booking.updated') {
+        if (
+            notification.type === 'booking-request'
+            || notification.type === 'booking.requested'
+            || notification.type === 'booking.submitted'
+            || notification.type === 'booking.updated'
+            || notification.type === 'booking.accepted'
+            || notification.type === 'booking.rejected'
+            || notification.type === 'booking.cancelled'
+            || notification.type === 'booking.completed'
+        ) {
             return '/guide/booking-requests';
         }
         if (notification.type === 'tour-request.created' || notification.type === 'tour-request.updated') {
@@ -1444,6 +1453,9 @@
                 const tour = tourMap[booking.tourId] || null;
                 const image = booking.tourImage || (tour ? tour.image : 'images/pangasinan.jpg');
                 const title = booking.tourTitle || (tour ? tour.title : 'Custom Tour Booking');
+                const normalized = String(booking.statusRaw || booking.status || '').toLowerCase();
+                const canReviewDecision = normalized === 'pending';
+                const canComplete = normalized === 'accepted' || normalized === 'confirmed' || normalized === 'booked';
                 const card = document.createElement('article');
                 card.className = 'booking-card';
                 card.dataset.bookingId = booking.id;
@@ -1461,8 +1473,12 @@
                     '<p class="small text-muted mb-1 mt-2">Booking date: ', escapeHtml(formatDate(booking.bookingDate)), '</p>',
                     '<p class="small text-muted mb-2">Guests: ', escapeHtml(booking.guests || '1 guest'), '</p>',
                     '<div class="d-flex gap-2">',
-                    '<button class="btn-charcoal w-100" type="button" data-accept-booking="', escapeHtml(booking.id), '"', booking.status !== 'Pending' ? ' disabled' : '', '>Accept</button>',
-                    '<button class="btn-danger w-100" type="button" data-decline-booking="', escapeHtml(booking.id), '"', booking.status !== 'Pending' ? ' disabled' : '', '>Decline</button>',
+                    '<button class="btn-charcoal w-100" type="button" data-accept-booking="', escapeHtml(booking.id), '"', canReviewDecision ? '' : ' disabled', '>Accept</button>',
+                    '<button class="btn-danger w-100" type="button" data-decline-booking="', escapeHtml(booking.id), '"', canReviewDecision ? '' : ' disabled', '>Decline</button>',
+                    '</div>',
+                    canComplete
+                        ? '<div class="d-flex gap-2 mt-2"><button class="btn-soft w-100" type="button" data-complete-booking="' + escapeHtml(booking.id) + '">Mark Completed</button></div>'
+                        : '',
                     '</div>',
                     '</div>'
                 ].join('');
@@ -1484,11 +1500,14 @@
             listHost.addEventListener('click', function (event) {
                 const acceptBtn = event.target.closest('[data-accept-booking]');
                 const declineBtn = event.target.closest('[data-decline-booking]');
-                if (!acceptBtn && !declineBtn) {
+                const completeBtn = event.target.closest('[data-complete-booking]');
+                if (!acceptBtn && !declineBtn && !completeBtn) {
                     return;
                 }
-                const id = (acceptBtn || declineBtn).dataset.acceptBooking || (acceptBtn || declineBtn).dataset.declineBooking;
-                const nextStatus = acceptBtn ? 'accepted' : 'declined';
+                const id = (acceptBtn || declineBtn || completeBtn).dataset.acceptBooking
+                    || (acceptBtn || declineBtn || completeBtn).dataset.declineBooking
+                    || (acceptBtn || declineBtn || completeBtn).dataset.completeBooking;
+                const nextStatus = acceptBtn ? 'accepted' : (declineBtn ? 'declined' : 'completed');
 
                 updateBookingStatus(id, nextStatus).then(function (data) {
                     const updatedBooking = data && data.booking ? normalizeBooking(data.booking) : null;

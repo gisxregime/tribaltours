@@ -27,7 +27,7 @@ class TourRequestCreated implements ShouldBroadcastNow
         $this->requestPayload = [
             'id' => (string) $tourRequest->id,
             'touristName' => trim((string) ($tourist->name ?? 'Tourist')),
-            'touristAvatar' => 'images/manila.jpg',
+            'touristAvatar' => $this->resolveAvatarPath($tourist?->avatar_path),
             'title' => (string) $tourRequest->title,
             'description' => (string) ($tourRequest->description ?? ''),
             'location' => $locationBits ? implode(', ', $locationBits) : 'Philippines',
@@ -60,5 +60,19 @@ class TourRequestCreated implements ShouldBroadcastNow
         return [
             'request' => $this->requestPayload,
         ];
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }
