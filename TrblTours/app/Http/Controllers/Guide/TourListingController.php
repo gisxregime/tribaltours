@@ -363,13 +363,33 @@ class TourListingController extends Controller
             'rating' => (float) ($tourListing->rating_avg ?? 0),
             'reviews' => (int) ($tourListing->reviews_count ?? 0),
             'status' => (string) ($tourListing->status ?: 'draft'),
-            'image' => (string) ($tourListing->cover_image_path ?: 'images/pangasinan.jpg'),
-            'coverImage' => (string) ($tourListing->cover_image_path ?: 'images/pangasinan.jpg'),
-            'gallery' => is_array($tourListing->gallery_paths) ? $tourListing->gallery_paths : [],
-            'provider' => trim((string) ($guide->name ?? 'Guide')),
-            'guide' => trim((string) ($guide->name ?? 'Guide')),
-            'guideAvatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
+            'image' => $this->resolveAssetPath($tourListing->cover_image_path, '/images/pangasinan.jpg'),
+            'coverImage' => $this->resolveAssetPath($tourListing->cover_image_path, '/images/pangasinan.jpg'),
+            'gallery' => collect(is_array($tourListing->gallery_paths) ? $tourListing->gallery_paths : [])->map(function ($item) {
+                return $this->resolveAssetPath((string) $item, '/images/pangasinan.jpg');
+            })->all(),
+            'provider' => trim((string) ($guide?->name ?? 'Guide')),
+            'guide' => trim((string) ($guide?->name ?? 'Guide')),
+            'guideAvatar' => $this->resolveAssetPath($guide?->avatar_path, '/images/manila.jpg'),
             'updatedAt' => optional($tourListing->updated_at)->toISOString(),
         ];
+    }
+
+    private function resolveAssetPath(?string $path, string $fallback): string
+    {
+        $value = trim((string) $path);
+        if ($value === '') {
+            return $fallback;
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1 || str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        if (str_starts_with($value, 'images/') || str_starts_with($value, 'storage/')) {
+            return '/' . $value;
+        }
+
+        return '/storage/' . ltrim($value, '/');
     }
 }

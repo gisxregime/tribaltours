@@ -21,7 +21,9 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('
     Route::post('favorites/toggle', [FavoriteController::class, 'toggle'])->name('favorites.toggle');
 
     Route::get('bookings/mine', [BookingController::class, 'mine'])->name('bookings.mine');
+    Route::post('bookings/check-availability', [BookingController::class, 'checkAvailability'])->name('bookings.check-availability');
     Route::patch('bookings/{booking}/transition', [BookingController::class, 'transition'])->name('bookings.transition');
+    Route::post('bookings/{booking}/review', [BookingController::class, 'storeReview'])->name('bookings.review');
 
     Route::get('messages/threads', [MessageController::class, 'threads'])->name('messages.threads');
     Route::get('messages/threads/{conversation}', [MessageController::class, 'thread'])->name('messages.thread');
@@ -30,6 +32,7 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('
 
     Route::post('requests/{tourRequest}/comment', [TourRequestController::class, 'addComment'])->name('requests.comment');
     Route::post('requests/{tourRequest}/select-guide', [TourRequestController::class, 'selectGuide'])->name('requests.select-guide');
+    Route::post('requests/{tourRequest}/unselect-guide', [TourRequestController::class, 'unselectGuide'])->name('requests.unselect-guide');
     Route::get('requests/mine', [TourRequestController::class, 'mine'])->name('requests.mine');
     Route::resource('requests', TourRequestController::class)
         ->parameters(['requests' => 'tourRequest']);

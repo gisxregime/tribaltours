@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Guide Profile | TrblTours</title>
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
@@ -80,10 +81,10 @@
 
                 <section class="surface p-3 p-md-4 mb-3">
                     <div class="d-flex flex-wrap align-items-center gap-3">
-                        <img id="guideAvatarPreview" src="{{ asset('images/manila.jpg') }}" alt="Guide avatar" style="width:82px;height:82px;border-radius:16px;object-fit:cover;border:1px solid #e2d8c5;">
+                        <img id="guideAvatarPreview" src="{{ asset(auth()->user()?->avatar_path ?: 'images/manila.jpg') }}" alt="Guide avatar" style="width:82px;height:82px;border-radius:16px;object-fit:cover;border:1px solid #e2d8c5;">
                         <div>
-                            <h2 id="guideProfileHeading" class="h3 mb-1">Guide Name</h2>
-                            <p id="guideProfileSub" class="text-muted mb-2">Philippines</p>
+                            <h2 id="guideProfileHeading" class="h3 mb-1">{{ auth()->user()?->name ?: 'Guide Name' }}</h2>
+                            <p id="guideProfileSub" class="text-muted mb-2">{{ auth()->user()?->location ?: 'Philippines' }}</p>
                             <label class="btn-soft mb-0" for="guideAvatarInput"><i class="fa-regular fa-image me-1"></i>Change Photo</label>
                             <input id="guideAvatarInput" type="file" accept="image/*" hidden>
                         </div>

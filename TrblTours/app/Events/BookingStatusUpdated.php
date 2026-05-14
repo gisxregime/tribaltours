@@ -17,9 +17,10 @@ class BookingStatusUpdated implements ShouldBroadcastNow
 
     public function __construct(Booking $booking)
     {
-        $booking->loadMissing(['guide', 'tourListing']);
+        $booking->loadMissing(['guide.guideProfile', 'tourListing']);
         $listing = $booking->tourListing;
         $guide = $booking->guide;
+        $guideProfile = $guide?->guideProfile;
 
         $state = match ($booking->status) {
             'accepted', 'confirmed' => 'booked',
@@ -42,7 +43,12 @@ class BookingStatusUpdated implements ShouldBroadcastNow
             'tourTitle' => (string) ($listing->title ?? 'Custom Tour Booking'),
             'image' => (string) ($listing->cover_image_path ?? 'images/pangasinan.jpg'),
             'guideName' => trim((string) ($guide->name ?? 'Guide')),
-            'guideAvatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
+            'guideAvatar' => $this->resolveAvatarPath($guide?->avatar_path),
+            'guideBio' => (string) ($guide?->bio ?? ''),
+            'guideLocation' => (string) ($guide?->location ?? ''),
+            'guideLanguages' => (string) ($guideProfile?->languages_spoken ?? ''),
+            'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
+            'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
             'bookingDate' => optional($booking->booked_for_date)->toDateString(),
             'total' => (float) ($booking->total_amount ?? 0),
             'paymentStatus' => (string) ($booking->payment_status ?? 'unpaid'),
@@ -72,5 +78,19 @@ class BookingStatusUpdated implements ShouldBroadcastNow
         return [
             'booking' => $this->bookingPayload,
         ];
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }

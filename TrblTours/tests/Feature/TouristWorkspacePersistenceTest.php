@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\Review;
 use App\Models\TourListing;
 use App\Models\TourRequest;
 use App\Models\User;
@@ -313,5 +314,145 @@ class TouristWorkspacePersistenceTest extends TestCase
         $booking->refresh();
         $this->assertSame('pending', $booking->status);
         $this->assertNull($booking->cancelled_at);
+    }
+
+    public function test_completed_booking_review_is_persisted_and_booking_feed_exposes_review(): void
+    {
+        $tourist = User::factory()->create([
+            'role' => 'tourist',
+            'email_verified_at' => now(),
+        ]);
+        $tourist->markEmailAsVerified();
+
+        $guide = User::factory()->create([
+            'role' => 'guide',
+            'email_verified_at' => now(),
+        ]);
+        $guide->markEmailAsVerified();
+
+        $listing = TourListing::query()->create([
+            'guide_id' => $guide->id,
+            'slug' => 'review-ready-listing',
+            'title' => 'Review Ready Listing',
+            'short_description' => 'Listing for review flow assertions.',
+            'price' => 3200,
+            'status' => 'published',
+            'is_active' => true,
+        ]);
+
+        $booking = Booking::query()->create([
+            'booking_reference' => 'TRBL-REVIEW-0001',
+            'tourist_id' => $tourist->id,
+            'guide_id' => $guide->id,
+            'tour_listing_id' => $listing->id,
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'guest_count' => 2,
+            'price_snapshot' => 3200,
+            'total_amount' => 6400,
+            'reservation_type' => 'instant',
+            'completed_at' => now(),
+        ]);
+
+        $this->actingAs($tourist)
+            ->postJson('/tourist/bookings/' . $booking->id . '/review', [
+                'rating' => 5,
+                'comment' => 'Excellent pace and clear instructions throughout the trip.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('review.rating', 5)
+            ->assertJsonPath('booking.id', (string) $booking->id)
+            ->assertJsonPath('booking.hasReview', true);
+
+        $this->assertDatabaseHas('reviews', [
+            'booking_id' => $booking->id,
+            'tour_listing_id' => $listing->id,
+            'tourist_id' => $tourist->id,
+            'guide_id' => $guide->id,
+            'rating' => 5,
+            'is_public' => true,
+        ]);
+
+        $listing->refresh();
+        $this->assertSame(1, (int) $listing->reviews_count);
+        $this->assertEquals(5.0, (float) $listing->rating_avg);
+
+        $this->actingAs($tourist)
+            ->getJson('/tourist/bookings/mine')
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('bookings.0.id', (string) $booking->id)
+            ->assertJsonPath('bookings.0.hasReview', true)
+            ->assertJsonPath('bookings.0.review.rating', 5);
+    }
+
+    public function test_tour_feed_show_returns_public_recent_reviews(): void
+    {
+        $tourist = User::factory()->create([
+            'role' => 'tourist',
+            'email_verified_at' => now(),
+        ]);
+        $tourist->markEmailAsVerified();
+
+        $guide = User::factory()->create([
+            'role' => 'guide',
+            'email_verified_at' => now(),
+        ]);
+        $guide->markEmailAsVerified();
+
+        $listing = TourListing::query()->create([
+            'guide_id' => $guide->id,
+            'slug' => 'preview-review-listing',
+            'title' => 'Preview Review Listing',
+            'short_description' => 'Listing used for tour preview review payload assertions.',
+            'price' => 2800,
+            'status' => 'published',
+            'is_active' => true,
+        ]);
+
+        $booking = Booking::query()->create([
+            'booking_reference' => 'TRBL-REVIEW-0002',
+            'tourist_id' => $tourist->id,
+            'guide_id' => $guide->id,
+            'tour_listing_id' => $listing->id,
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'guest_count' => 1,
+            'price_snapshot' => 2800,
+            'total_amount' => 2800,
+            'reservation_type' => 'instant',
+            'completed_at' => now(),
+        ]);
+
+        Review::query()->create([
+            'booking_id' => $booking->id,
+            'tour_listing_id' => $listing->id,
+            'tourist_id' => $tourist->id,
+            'guide_id' => $guide->id,
+            'rating' => 4,
+            'title' => 'Great Experience',
+            'comment' => 'Loved the stopovers and route pacing.',
+            'is_public' => true,
+        ]);
+
+        Review::query()->create([
+            'booking_id' => null,
+            'tour_listing_id' => $listing->id,
+            'tourist_id' => $tourist->id,
+            'guide_id' => $guide->id,
+            'rating' => 3,
+            'title' => 'Private Note',
+            'comment' => 'Should not be exposed publicly.',
+            'is_public' => false,
+        ]);
+
+        $this->actingAs($tourist)
+            ->getJson('/tourist/tours/feed/' . $listing->id)
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('tour.id', (string) $listing->id)
+            ->assertJsonPath('tour.recentReviews.0.rating', 4)
+            ->assertJsonPath('tour.recentReviews.0.title', 'Great Experience');
     }
 }

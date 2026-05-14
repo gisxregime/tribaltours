@@ -156,9 +156,9 @@ class BookingRequestController extends Controller
             'id' => (string) $booking->id,
             'tourId' => $tour ? (string) $tour->id : null,
             'tourTitle' => (string) ($tour->title ?? 'Custom Tour Booking'),
-            'tourImage' => (string) ($tour->cover_image_path ?? 'images/pangasinan.jpg'),
+            'tourImage' => $this->resolveAssetPath($tour?->cover_image_path, '/images/pangasinan.jpg'),
             'touristName' => trim((string) ($tourist->name ?? 'Tourist')),
-            'touristAvatar' => (string) (($tourist && $tourist->avatar_path) ? $tourist->avatar_path : 'images/manila.jpg'),
+            'touristAvatar' => $this->resolveAssetPath($tourist?->avatar_path, '/images/manila.jpg'),
             'bookingDate' => optional($booking->booked_for_date)->toDateString(),
             'guests' => (int) ($booking->guest_count ?? 1) . ' guest' . ((int) ($booking->guest_count ?? 1) > 1 ? 's' : ''),
             'guestCount' => (int) ($booking->guest_count ?? 1),
@@ -168,5 +168,23 @@ class BookingRequestController extends Controller
             'reference' => (string) $booking->booking_reference,
             'updatedAt' => optional($booking->updated_at)->toISOString(),
         ];
+    }
+
+    private function resolveAssetPath(?string $path, string $fallback): string
+    {
+        $value = trim((string) $path);
+        if ($value === '') {
+            return $fallback;
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1 || str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        if (str_starts_with($value, 'images/') || str_starts_with($value, 'storage/')) {
+            return '/' . $value;
+        }
+
+        return '/storage/' . ltrim($value, '/');
     }
 }

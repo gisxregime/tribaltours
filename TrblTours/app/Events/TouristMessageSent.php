@@ -28,6 +28,7 @@ class TouristMessageSent implements ShouldBroadcastNow
             'guideId' => $conversation ? (string) $conversation->guide_id : null,
             'senderId' => $sender ? (string) $sender->id : null,
             'senderName' => trim((string) ($sender->name ?? 'User')),
+            'senderAvatar' => $this->resolveAvatarPath($sender?->avatar_path),
             'body' => (string) ($message->body ?? ''),
             'isRead' => (bool) $message->is_read,
             'readAt' => optional($message->read_at)->toISOString(),
@@ -52,5 +53,31 @@ class TouristMessageSent implements ShouldBroadcastNow
         return [
             'message' => $this->messagePayload,
         ];
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $value = trim((string) $path);
+        if ($value === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1) {
+            return $value;
+        }
+
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        if (str_starts_with($value, 'images/')) {
+            return '/' . $value;
+        }
+
+        if (str_starts_with($value, 'storage/')) {
+            return '/' . $value;
+        }
+
+        return '/storage/' . ltrim($value, '/');
     }
 }

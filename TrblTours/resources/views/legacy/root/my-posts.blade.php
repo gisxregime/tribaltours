@@ -298,6 +298,25 @@
         </div>
     </div>
 
+    <div class="modal fade" id="selectGuideConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 mb-0">Confirm Guide Selection</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">You are about to select <strong id="selectGuideConfirmName">this guide</strong> for <strong id="selectGuideConfirmRequest">your request</strong>.</p>
+                    <p class="small text-muted mb-0" id="selectGuideConfirmAmount">This will lock negotiation offers and move communication to private chat.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                    <button id="confirmSelectGuideBtn" class="btn-gold" type="button"><i class="fa-solid fa-user-check me-1"></i>Select Guide</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         window.TRBL_PUSHER = {

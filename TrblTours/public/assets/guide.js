@@ -55,6 +55,38 @@
         return new Date().toISOString();
     }
 
+    function normalizeAssetPath(path, fallback) {
+        const value = String(path || '').trim();
+        const defaultValue = String(fallback || '/images/manila.jpg').trim() || '/images/manila.jpg';
+        if (!value) {
+            return defaultValue;
+        }
+        if (value.startsWith('data:') || value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/')) {
+            return value;
+        }
+        if (value.startsWith('../')) {
+            return '/' + value.replace(/^\.\.\//, '');
+        }
+        if (value.startsWith('images/') || value.startsWith('storage/')) {
+            return '/' + value;
+        }
+        return '/storage/' + value.replace(/^\/+/, '');
+    }
+
+    function formatMessageTime(value) {
+        const raw = String(value || '').trim();
+        if (!raw) {
+            return '';
+        }
+
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) {
+            return raw;
+        }
+
+        return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
     function formatPeso(value) {
         return '₱' + Number(value || 0).toLocaleString('en-PH');
     }
@@ -367,8 +399,12 @@
                 return String(src || '').trim();
             }).filter(Boolean).slice(0, 10)
             : [];
-        const fallbackImage = String(raw.coverImage || raw.image || gallery[0] || '../images/carousel2.jpg').trim() || '../images/carousel2.jpg';
-        const finalGallery = gallery.length ? gallery : [fallbackImage];
+        const fallbackImage = normalizeAssetPath(raw.coverImage || raw.image || gallery[0], '/images/carousel2.jpg');
+        const finalGallery = gallery.length
+            ? gallery.map(function (src) {
+                return normalizeAssetPath(src, fallbackImage);
+            })
+            : [fallbackImage];
 
         return {
             id: String(raw.id || uid('guide-tour')),
@@ -402,7 +438,7 @@
             excludes: String(raw.excludes || '').trim(),
             requirements: String(raw.requirements || '').trim(),
             safetyInfo: String(raw.safetyInfo || '').trim(),
-            guidePhoto: String(raw.guidePhoto || profile.avatar || '../images/manila.jpg').trim() || '../images/manila.jpg',
+            guidePhoto: normalizeAssetPath(raw.guidePhoto || raw.guideAvatar || profile.avatar, '/images/manila.jpg'),
             guideVerified: parseBool(raw.guideVerified, false),
             guideExperienceYears: Math.max(0, Number(raw.guideExperienceYears || 1)),
             guideContact: String(raw.guideContact || '').trim(),
@@ -413,8 +449,8 @@
             childFriendly: parseBool(raw.childFriendly, false),
             petFriendly: parseBool(raw.petFriendly, false),
             description: String(raw.description || '').trim(),
-            image: finalGallery[0],
-            coverImage: finalGallery[0],
+            image: normalizeAssetPath(finalGallery[0], '/images/carousel2.jpg'),
+            coverImage: normalizeAssetPath(finalGallery[0], '/images/carousel2.jpg'),
             gallery: finalGallery
         };
     }
@@ -679,7 +715,7 @@
             languages: 'English, Filipino, Cebuano',
             certifications: 'DOT Accredited Guide, Basic Life Support, Open Water Dive Support',
             social: 'facebook.com/guideprofile, instagram.com/guideprofile',
-            avatar: '../images/manila.jpg'
+            avatar: '/images/manila.jpg'
         };
     }
 
@@ -862,6 +898,55 @@
 
     function setGuideProfile(profile) {
         writeStore(GUIDE_PROFILE_KEY, profile || {});
+    }
+
+    function normalizeGuideProfileSnapshot(payload) {
+        const source = payload && typeof payload === 'object' ? payload : {};
+        const fallback = defaultProfile();
+
+        return {
+            name: String(source.name || fallback.name),
+            location: String(source.location || fallback.location),
+            bio: String(source.bio || fallback.bio),
+            phone: String(source.phone || fallback.phone),
+            email: String(source.email || fallback.email),
+            specialties: String(source.specialties || fallback.specialties),
+            languages: String(source.languages || fallback.languages),
+            certifications: String(source.certifications || fallback.certifications),
+            social: String(source.social || fallback.social),
+            avatar: normalizeAssetPath(source.avatar || fallback.avatar, '/images/manila.jpg'),
+            yearsOfExperience: Number(source.yearsOfExperience || 0)
+        };
+    }
+
+    function syncGuideProfileFromApi() {
+        return apiRequest('/guide/account/profile').then(function (data) {
+            const profilePayload = data && data.profile ? data.profile : {};
+            if (data && data.pusher && !window.TRBL_PUSHER) {
+                window.TRBL_PUSHER = data.pusher;
+            }
+            const normalized = normalizeGuideProfileSnapshot(profilePayload);
+            setGuideProfile(normalized);
+            return normalized;
+        }).catch(function () {
+            return getGuideProfile();
+        });
+    }
+
+    function updateGuideProfileInApi(formData) {
+        return apiRequest('/guide/account/profile', {
+            method: 'PATCH',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken()
+            },
+            body: formData
+        }).then(function (data) {
+            const profilePayload = data && data.profile ? data.profile : {};
+            const normalized = normalizeGuideProfileSnapshot(profilePayload);
+            setGuideProfile(normalized);
+            return normalized;
+        });
     }
 
     function ensureSeedData() {
@@ -1107,6 +1192,23 @@
         const activeGuideName = String(guideProfile && guideProfile.name ? guideProfile.name : 'Tour Guide').trim() || 'Tour Guide';
         let realtimeSubscribed = false;
 
+        function isFeedVisibleStatus(status) {
+            const normalized = String(status || '').trim().toLowerCase();
+            return normalized === 'open' || normalized === 'negotiating';
+        }
+
+        function statusBadgeClass(status) {
+            return String(status || '').trim().toLowerCase() === 'negotiating'
+                ? 'badge-negotiating'
+                : 'badge-open';
+        }
+
+        function statusBadgeLabel(status) {
+            return String(status || '').trim().toLowerCase() === 'negotiating'
+                ? 'Negotiating'
+                : 'Open';
+        }
+
         function upsertIncomingRequest(request) {
             if (!request || !request.id) {
                 return;
@@ -1115,6 +1217,15 @@
             const existingIndex = current.findIndex(function (item) {
                 return String(item.id) === String(request.id);
             });
+
+            if (!isFeedVisibleStatus(request.status)) {
+                if (existingIndex !== -1) {
+                    current.splice(existingIndex, 1);
+                    setTouristRequests(current.slice(0, 120));
+                }
+                return;
+            }
+
             const merged = Object.assign({
                 comments: []
             }, request);
@@ -1135,7 +1246,9 @@
                 if (!data || !Array.isArray(data.requests)) {
                     return;
                 }
-                setTouristRequests(data.requests.map(function (item) {
+                setTouristRequests(data.requests.filter(function (item) {
+                    return isFeedVisibleStatus(item && item.status);
+                }).map(function (item) {
                     return Object.assign({ comments: [] }, item, {
                         comments: Array.isArray(item.comments) ? item.comments : []
                     });
@@ -1250,7 +1363,9 @@
         }
 
         function render() {
-            const requests = getTouristRequests().slice().sort(function (a, b) {
+            const requests = getTouristRequests().filter(function (item) {
+                return isFeedVisibleStatus(item && item.status);
+            }).slice().sort(function (a, b) {
                 return new Date(b.createdAt || nowISO()).getTime() - new Date(a.createdAt || nowISO()).getTime();
             });
 
@@ -1278,7 +1393,7 @@
                     '<p class="small text-muted mb-0">', escapeHtml(formatDate(item.createdAt)), '</p>',
                     '</div>',
                     '</div>',
-                    '<span class="badge-status badge-open">Open</span>',
+                    '<span class="badge-status ', statusBadgeClass(item.status), '">', statusBadgeLabel(item.status), '</span>',
                     '</div>',
                     '<div class="request-body">',
                     '<h2 class="h5 mb-1">', escapeHtml(item.title || 'Tour request'), '</h2>',
@@ -1387,9 +1502,9 @@
                 id: String(source.id || uid('booking')),
                 tourId: source.tourId ? String(source.tourId) : '',
                 tourTitle: String(source.tourTitle || ''),
-                tourImage: String(source.tourImage || ''),
+                tourImage: normalizeAssetPath(source.tourImage, '/images/pangasinan.jpg'),
                 touristName: String(source.touristName || 'Tourist'),
-                touristAvatar: String(source.touristAvatar || '../images/manila.jpg'),
+                touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
                 bookingDate: source.bookingDate || null,
                 guests: String(source.guests || (source.guestCount ? String(source.guestCount) + ' guests' : '1 guest')),
                 statusRaw: rawStatus,
@@ -1557,6 +1672,8 @@
         const listHost = qs('#guideToursList');
         const empty = qs('#guideToursEmpty');
         const resetBtn = qs('#tourFormReset');
+        const clearImagesBtn = qs('#tourClearImages');
+        const imageMeta = qs('#tourImageMeta');
 
         const fields = {
             id: qs('#tourId'),
@@ -1673,6 +1790,7 @@
             imageTouched = false;
             guidePhotoTouched = false;
             renderGallery(fields.imagePreview, [], 'Tour', true);
+            updateImageMeta();
             const profile = getGuideProfile();
             if (fields.provider) {
                 fields.provider.value = String(profile && profile.name ? profile.name : '');
@@ -1686,6 +1804,34 @@
             setGuestTypes(['Adult']);
             setUploadProgress(0);
             writeStore(GUIDE_TOUR_DRAFT_KEY, null);
+        }
+
+        function updateImageMeta() {
+            if (!imageMeta) {
+                return;
+            }
+
+            const count = previewGallery.length;
+            if (!count) {
+                imageMeta.textContent = 'No images selected yet.';
+                return;
+            }
+
+            imageMeta.textContent = String(count) + ' image' + (count > 1 ? 's' : '') + ' selected.';
+        }
+
+        function isImageFile(file) {
+            if (!file) {
+                return false;
+            }
+
+            const mime = String(file.type || '').toLowerCase();
+            if (mime && mime.indexOf('image/') === 0) {
+                return true;
+            }
+
+            const name = String(file.name || '').toLowerCase();
+            return /\.(png|jpe?g|webp|gif|bmp|svg|heic|heif)$/.test(name);
         }
 
         function renderGallery(host, gallery, title, removable) {
@@ -1964,6 +2110,7 @@
             imageTouched = false;
             guidePhotoTouched = false;
             renderGallery(fields.imagePreview, previewGallery, tour.title, true);
+            updateImageMeta();
             setUploadProgress(0);
             if (clearDraftAfter) {
                 writeStore(GUIDE_TOUR_DRAFT_KEY, null);
@@ -2006,9 +2153,10 @@
 
         function appendImages(fileList) {
             const files = Array.from(fileList || []).filter(function (file) {
-                return file && /^image\//.test(String(file.type || ''));
+                return isImageFile(file);
             });
             if (!files.length) {
+                showToast('Please select valid image files (png, jpg, webp, gif, svg, heic).', 'warning');
                 return;
             }
             const availableSlots = Math.max(0, 10 - previewGallery.length);
@@ -2022,6 +2170,7 @@
                 previewGallery = previewGallery.concat(images).slice(0, 10);
                 imageTouched = true;
                 renderGallery(fields.imagePreview, previewGallery, fields.title ? fields.title.value : 'Tour', true);
+                updateImageMeta();
                 if (files.length > availableSlots) {
                     showToast('Only ' + String(availableSlots) + ' image(s) were added. Limit is 10.', 'warning');
                 }
@@ -2292,6 +2441,10 @@
                     });
                     imageTouched = true;
                     renderGallery(fields.imagePreview, previewGallery, fields.title ? fields.title.value : 'Tour', true);
+                    updateImageMeta();
+                    if (!previewGallery.length) {
+                        setUploadProgress(0);
+                    }
                     scheduleDraftSave();
                     return;
                 }
@@ -2308,8 +2461,26 @@
                     }));
                     imageTouched = true;
                     renderGallery(fields.imagePreview, previewGallery, fields.title ? fields.title.value : 'Tour', true);
+                    updateImageMeta();
                     scheduleDraftSave();
                 }
+            });
+        }
+
+        if (clearImagesBtn) {
+            clearImagesBtn.addEventListener('click', function () {
+                if (!previewGallery.length) {
+                    return;
+                }
+                previewGallery = [];
+                imageTouched = true;
+                renderGallery(fields.imagePreview, previewGallery, fields.title ? fields.title.value : 'Tour', true);
+                updateImageMeta();
+                setUploadProgress(0);
+                if (fields.images) {
+                    fields.images.value = '';
+                }
+                scheduleDraftSave();
             });
         }
 
@@ -2422,18 +2593,31 @@
         const messagesByConversation = {};
         const routeConversationId = params.get('conversation');
 
+        function conversationPartnerKey(item) {
+            const source = item && typeof item === 'object' ? item : {};
+            const touristId = String(source.touristId || '').trim();
+            if (touristId) {
+                return 'tourist:' + touristId;
+            }
+
+            return 'name:' + String(source.touristName || source.name || '').trim().toLowerCase();
+        }
+
         function normalizeConversation(item) {
             const source = item && typeof item === 'object' ? item : {};
+            const partnerKey = conversationPartnerKey(source);
+
             return {
                 id: String(source.id || uid('conversation')),
                 touristName: String(source.name || source.touristName || 'Tourist'),
-                avatar: String(source.avatar || '../images/manila.jpg'),
+                avatar: normalizeAssetPath(source.avatar, '/images/manila.jpg'),
                 tourTitle: String(source.tourTitle || 'Travel planning thread'),
                 unread: Number(source.unread || 0),
                 lastTime: String(source.time || nowISO()),
                 last: String(source.last || ''),
                 guideId: source.guideId ? String(source.guideId) : '',
-                touristId: source.touristId ? String(source.touristId) : ''
+                touristId: source.touristId ? String(source.touristId) : '',
+                partnerKey: partnerKey
             };
         }
 
@@ -2444,15 +2628,63 @@
                 mine: Boolean(source.mine),
                 text: String(source.text || source.body || ''),
                 senderId: String(source.senderId || ''),
+                senderAvatar: normalizeAssetPath(source.senderAvatar, '/images/manila.jpg'),
                 isRead: Boolean(source.isRead),
                 createdAt: String(source.createdAt || nowISO())
             };
+        }
+
+        function dedupeConversationsByPartner(items) {
+            const source = Array.isArray(items) ? items : [];
+            const seen = new Map();
+
+            source.forEach(function (conversation) {
+                if (!conversation || typeof conversation !== 'object') {
+                    return;
+                }
+
+                const key = String(conversation.partnerKey || conversationPartnerKey(conversation) || '').trim();
+                if (!key) {
+                    return;
+                }
+
+                const existing = seen.get(key);
+                if (!existing) {
+                    seen.set(key, conversation);
+                    return;
+                }
+
+                const existingTime = Date.parse(String(existing.lastTime || '')) || 0;
+                const currentTime = Date.parse(String(conversation.lastTime || '')) || 0;
+                if (currentTime >= existingTime) {
+                    seen.set(key, Object.assign({}, existing, conversation, {
+                        unread: Math.max(Number(existing.unread || 0), Number(conversation.unread || 0))
+                    }));
+                }
+            });
+
+            return Array.from(seen.values()).sort(function (a, b) {
+                return new Date(b.lastTime || nowISO()).getTime() - new Date(a.lastTime || nowISO()).getTime();
+            });
         }
 
         function sortedConversations() {
             return conversations.slice().sort(function (a, b) {
                 return new Date(b.lastTime || nowISO()).getTime() - new Date(a.lastTime || nowISO()).getTime();
             });
+        }
+
+        function findMineAvatar(conversationId) {
+            const key = String(conversationId || '');
+            const messages = messagesByConversation[key] || [];
+            for (let index = messages.length - 1; index >= 0; index -= 1) {
+                const message = messages[index];
+                if (message && message.mine && message.senderAvatar) {
+                    return message.senderAvatar;
+                }
+            }
+
+            return '/images/manila.jpg';
         }
 
         function renderList() {
@@ -2484,7 +2716,7 @@
                 row.className = 'conversation-item' + (activeConversation && activeConversation.id === conversation.id ? ' active' : '');
                 row.dataset.conversationId = conversation.id;
                 row.innerHTML = [
-                    '<img class="conversation-avatar" src="', escapeHtml(conversation.avatar || '../images/manila.jpg'), '" alt="', escapeHtml(conversation.touristName || 'Tourist'), '">',
+                    '<img class="conversation-avatar" src="', escapeHtml(normalizeAssetPath(conversation.avatar, '/images/manila.jpg')), '" alt="', escapeHtml(conversation.touristName || 'Tourist'), '">',
                     '<div class="flex-grow-1">',
                     '<div class="d-flex justify-content-between"><strong>', escapeHtml(conversation.touristName || 'Tourist'), '</strong><small class="text-muted">', relativeTime(conversation.lastTime), '</small></div>',
                     '<div class="small text-muted text-truncate" style="max-width:180px;">', escapeHtml(tail || 'No messages yet.'), '</div>',
@@ -2511,10 +2743,44 @@
             }
 
             chatMessages.innerHTML = '';
-            (messagesByConversation[activeConversation.id] || []).forEach(function (message) {
+            const threadMessages = messagesByConversation[activeConversation.id] || [];
+            const lastMineMessage = threadMessages.slice().reverse().find(function (message) {
+                return message.mine;
+            });
+            const lastMineId = lastMineMessage ? String(lastMineMessage.id) : '';
+
+            threadMessages.forEach(function (message) {
                 const row = document.createElement('div');
                 row.className = 'msg-row' + (message.mine ? ' mine' : '');
-                row.innerHTML = '<div class="msg-bubble">' + escapeHtml(message.text) + '</div>';
+
+                const metaParts = [formatMessageTime(message.createdAt)].filter(Boolean);
+                if (message.mine && String(message.id) === lastMineId) {
+                    metaParts.push(message.isRead ? 'Read' : 'Delivered');
+                }
+
+                const avatar = normalizeAssetPath(
+                    message.senderAvatar || (message.mine ? findMineAvatar(activeConversation.id) : activeConversation.avatar),
+                    '/images/manila.jpg'
+                );
+
+                if (message.mine) {
+                    row.innerHTML = [
+                        '<div class="msg-content">',
+                        '<div class="msg-bubble">', escapeHtml(message.text), '</div>',
+                        '<div class="msg-meta">', escapeHtml(metaParts.join(' • ')), '</div>',
+                        '</div>',
+                        '<img class="msg-avatar" src="', escapeHtml(avatar), '" alt="You">'
+                    ].join('');
+                } else {
+                    row.innerHTML = [
+                        '<img class="msg-avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(activeConversation.touristName || 'Tourist'), '">',
+                        '<div class="msg-content">',
+                        '<div class="msg-bubble">', escapeHtml(message.text), '</div>',
+                        '<div class="msg-meta">', escapeHtml(metaParts.join(' • ')), '</div>',
+                        '</div>'
+                    ].join('');
+                }
+
                 chatMessages.appendChild(row);
             });
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -2527,7 +2793,7 @@
                 }
 
                 const incoming = data && Array.isArray(data.conversations) ? data.conversations : [];
-                conversations = incoming.map(normalizeConversation);
+                conversations = dedupeConversationsByPartner(incoming.map(normalizeConversation));
 
                 if (!activeConversation && conversations.length) {
                     if (routeConversationId) {
@@ -2536,6 +2802,13 @@
                         }) || conversations[0];
                     } else {
                         activeConversation = conversations[0];
+                    }
+                } else if (activeConversation) {
+                    const match = conversations.find(function (item) {
+                        return item.id === activeConversation.id || item.partnerKey === activeConversation.partnerKey;
+                    });
+                    if (match) {
+                        activeConversation = match;
                     }
                 }
 
@@ -2565,19 +2838,21 @@
                 const messages = data && Array.isArray(data.messages) ? data.messages.map(normalizeMessage) : [];
                 if (summary) {
                     const index = conversations.findIndex(function (item) {
-                        return item.id === summary.id;
+                        return item.id === summary.id || item.partnerKey === summary.partnerKey;
                     });
                     if (index === -1) {
                         conversations.unshift(summary);
                     } else {
                         conversations[index] = Object.assign({}, conversations[index], summary, { unread: 0 });
                     }
+                    conversations = dedupeConversationsByPartner(conversations);
                     activeConversation = conversations.find(function (item) {
-                        return item.id === summary.id;
+                        return item.id === summary.id || item.partnerKey === summary.partnerKey;
                     }) || summary;
                 }
 
-                messagesByConversation[String(conversationId)] = messages;
+                const key = String(activeConversation && activeConversation.id ? activeConversation.id : conversationId);
+                messagesByConversation[key] = messages;
                 if (activeConversation) {
                     activeConversation.unread = 0;
                 }
@@ -2627,6 +2902,7 @@
                 id: 'draft-' + Date.now(),
                 mine: true,
                 text: text,
+                senderAvatar: findMineAvatar(conversationId),
                 isRead: false,
                 createdAt: nowISO()
             };
@@ -2651,9 +2927,16 @@
                     return !String(message.id || '').startsWith('draft-');
                 });
                 if (sent) {
-                    fresh.push(sent);
+                    const alreadyExists = fresh.some(function (message) {
+                        return String(message.id) === String(sent.id);
+                    });
+                    if (!alreadyExists) {
+                        fresh.push(sent);
+                    }
                 }
                 messagesByConversation[conversationId] = fresh;
+                activeConversation.last = sent && sent.text ? sent.text : text;
+                activeConversation.lastTime = sent && sent.createdAt ? sent.createdAt : nowISO();
                 renderMessages();
                 syncThreads();
                 syncGuideNotificationsFromApi();
@@ -2689,7 +2972,15 @@
 
                 const key = String(incoming.conversationId);
                 const existingConversation = conversations.find(function (item) {
-                    return item.id === key;
+                    if (item.id === key) {
+                        return true;
+                    }
+
+                    if (incoming.touristId && item.touristId && String(item.touristId) === String(incoming.touristId)) {
+                        return true;
+                    }
+
+                    return false;
                 });
 
                 if (!existingConversation) {
@@ -2698,32 +2989,36 @@
                     return;
                 }
 
-                const listForConversation = messagesByConversation[key] || [];
+                const threadKey = String(existingConversation.id || key);
+                const listForConversation = messagesByConversation[threadKey] || [];
                 const alreadyExists = listForConversation.some(function (message) {
                     return String(message.id) === String(incoming.id);
                 });
 
+                const mine = existingConversation.guideId && String(existingConversation.guideId) === String(incoming.senderId || '');
                 if (!alreadyExists) {
-                    const mine = existingConversation.guideId && String(existingConversation.guideId) === String(incoming.senderId || '');
                     listForConversation.push(normalizeMessage({
                         id: incoming.id,
                         mine: mine,
                         text: incoming.body || '',
                         senderId: incoming.senderId,
+                        senderAvatar: incoming.senderAvatar,
                         isRead: Boolean(incoming.isRead),
                         createdAt: incoming.createdAt
                     }));
-                    messagesByConversation[key] = listForConversation;
+                    messagesByConversation[threadKey] = listForConversation;
                 }
 
                 existingConversation.last = String(incoming.body || '');
                 existingConversation.lastTime = String(incoming.createdAt || nowISO());
-                if (!activeConversation || activeConversation.id !== key) {
+                if ((!activeConversation || activeConversation.id !== threadKey) && !mine) {
                     existingConversation.unread = Number(existingConversation.unread || 0) + 1;
                 }
 
-                if (activeConversation && activeConversation.id === key) {
-                    loadConversation(key);
+                conversations = dedupeConversationsByPartner(conversations);
+
+                if (activeConversation && activeConversation.id === threadKey) {
+                    loadConversation(threadKey);
                 } else {
                     renderList();
                 }
@@ -2751,7 +3046,7 @@
         const form = qs('#guideProfileForm');
         const avatarInput = qs('#guideAvatarInput');
         const avatarPreview = qs('#guideAvatarPreview');
-        const profile = getGuideProfile();
+        let profile = normalizeGuideProfileSnapshot(getGuideProfile());
 
         const fields = {
             name: qs('#guideName'),
@@ -2767,7 +3062,7 @@
 
         function fillProfileView() {
             if (avatarPreview) {
-                avatarPreview.src = profile.avatar || '../images/manila.jpg';
+                avatarPreview.src = normalizeAssetPath(profile.avatar, '/images/manila.jpg');
             }
             Object.keys(fields).forEach(function (key) {
                 if (fields[key]) {
@@ -2801,25 +3096,54 @@
         if (form) {
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
-                const updated = Object.assign({}, profile, {
-                    name: fields.name ? fields.name.value.trim() : profile.name,
-                    location: fields.location ? fields.location.value.trim() : profile.location,
-                    bio: fields.bio ? fields.bio.value.trim() : profile.bio,
-                    phone: fields.phone ? fields.phone.value.trim() : profile.phone,
-                    email: fields.email ? fields.email.value.trim() : profile.email,
-                    specialties: fields.specialties ? fields.specialties.value.trim() : profile.specialties,
-                    languages: fields.languages ? fields.languages.value.trim() : profile.languages,
-                    certifications: fields.certifications ? fields.certifications.value.trim() : profile.certifications,
-                    social: fields.social ? fields.social.value.trim() : profile.social,
-                    avatar: avatarPreview ? avatarPreview.src : profile.avatar
+                const submitButton = qs('button[type="submit"]', form);
+                const previousLabel = submitButton ? submitButton.innerHTML : '';
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving...';
+                }
+
+                const formData = new FormData();
+                formData.append('name', fields.name ? fields.name.value.trim() : profile.name);
+                formData.append('location', fields.location ? fields.location.value.trim() : profile.location);
+                formData.append('bio', fields.bio ? fields.bio.value.trim() : profile.bio);
+                formData.append('phone', fields.phone ? fields.phone.value.trim() : profile.phone);
+                formData.append('email', fields.email ? fields.email.value.trim() : profile.email);
+                formData.append('specialties', fields.specialties ? fields.specialties.value.trim() : profile.specialties);
+                formData.append('languages', fields.languages ? fields.languages.value.trim() : profile.languages);
+                formData.append('certifications', fields.certifications ? fields.certifications.value.trim() : profile.certifications);
+                formData.append('social', fields.social ? fields.social.value.trim() : profile.social);
+
+                const years = profile && profile.yearsOfExperience ? Number(profile.yearsOfExperience) : 0;
+                formData.append('years_of_experience', String(Number.isFinite(years) ? years : 0));
+
+                if (avatarInput && avatarInput.files && avatarInput.files[0]) {
+                    formData.append('avatar', avatarInput.files[0]);
+                }
+
+                updateGuideProfileInApi(formData).then(function (updated) {
+                    profile = normalizeGuideProfileSnapshot(updated);
+                    showToast('Guide profile saved.', 'success');
+                    fillProfileView();
+                    if (avatarInput) {
+                        avatarInput.value = '';
+                    }
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to save profile right now.', 'danger');
+                }).finally(function () {
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = previousLabel;
+                    }
                 });
-                setGuideProfile(updated);
-                showToast('Guide profile saved.', 'success');
-                fillProfileView();
             });
         }
 
         fillProfileView();
+        syncGuideProfileFromApi().then(function (freshProfile) {
+            profile = normalizeGuideProfileSnapshot(freshProfile);
+            fillProfileView();
+        });
     }
 
     function renderPendingBookingsSummary(host) {
@@ -2887,20 +3211,21 @@
 
         reviews.forEach(function (review) {
             const tour = tours[review.tourId];
-            if (!tour) {
-                return;
-            }
             const relatedBooking = bookings.find(function (booking) {
                 return booking.tourId === review.tourId && String(booking.touristName || '').trim().toLowerCase() === String(review.reviewer || '').trim().toLowerCase();
             });
+            const listingTitle = tour ? tour.title : String(review.listingTitle || 'Tour Listing');
+            const bookedDateText = relatedBooking
+                ? escapeHtml(formatDate(relatedBooking.bookingDate)) + ' • ' + escapeHtml(relatedBooking.guests || '1 guest')
+                : (review.bookedDate ? escapeHtml(formatDate(review.bookedDate)) + ' • ' + escapeHtml(review.guests || '1 guest') : 'Not available');
             const row = document.createElement('article');
             row.className = 'settings-card dashboard-review-card';
             row.innerHTML = [
                 '<p class="small text-muted mb-1">Booked Listing</p>',
-                '<p class="mb-1"><strong>', escapeHtml(tour.title), '</strong></p>',
+                '<p class="mb-1"><strong>', escapeHtml(listingTitle), '</strong></p>',
                 '<p class="small mb-1">Tourist: ', escapeHtml(review.reviewer), '</p>',
-                '<p class="small mb-1">Rating: <strong>', '★'.repeat(Math.max(1, Number(review.rating || 0))), '</strong></p>',
-                relatedBooking ? '<p class="small text-muted mb-2">Booked date: ' + escapeHtml(formatDate(relatedBooking.bookingDate)) + ' • ' + escapeHtml(relatedBooking.guests || '1 guest') + '</p>' : '<p class="small text-muted mb-2">Booked date: Not available</p>',
+                '<p class="small mb-1">Rating: <strong>', '★'.repeat(Math.max(1, Math.min(5, Number(review.rating || 0)))), '</strong></p>',
+                '<p class="small text-muted mb-2">Booked date: ' + bookedDateText + '</p>',
                 '<p class="small text-muted mb-0">', escapeHtml(review.comment), '</p>'
             ].join('');
             host.appendChild(row);
@@ -2912,60 +3237,127 @@
             return;
         }
 
-        const tours = getGuideTours();
-        const bookings = getGuideBookings();
-        const reviews = getGuideReviews();
-        const tourMap = tours.reduce(function (acc, tour) {
-            acc[tour.id] = tour;
-            return acc;
-        }, {});
-        const totalTours = tours.length;
-        const pending = bookings.filter(function (booking) {
-            return booking.status === 'Pending';
-        }).length;
-        const accepted = bookings.filter(function (booking) {
-            return isBookedStatus(booking.status);
-        }).length;
-        const earnings = bookings.reduce(function (sum, booking) {
-            if (!isBookedStatus(booking && booking.status)) {
-                return sum;
+        function normalizeDashboardBooking(item) {
+            const source = item && typeof item === 'object' ? item : {};
+            const guestCount = Math.max(1, Number(source.guestCount || source.guests || 1));
+            return {
+                id: String(source.id || uid('booking')),
+                tourId: source.tourId ? String(source.tourId) : '',
+                touristName: String(source.touristName || 'Tourist'),
+                bookingDate: source.bookingDate || null,
+                guests: String(source.guests || (guestCount + ' guest' + (guestCount > 1 ? 's' : ''))),
+                status: String(source.statusRaw || source.status || 'pending').trim().toLowerCase()
+            };
+        }
+
+        function normalizeDashboardReview(item) {
+            const source = item && typeof item === 'object' ? item : {};
+            return {
+                id: String(source.id || uid('review')),
+                tourId: String(source.tourId || ''),
+                listingTitle: String(source.listingTitle || 'Tour Listing'),
+                reviewer: String(source.reviewer || 'Tourist'),
+                rating: Math.max(1, Math.min(5, Number(source.rating || 0))),
+                comment: String(source.comment || ''),
+                bookedDate: source.bookedDate || null,
+                guests: String(source.guests || '1 guest')
+            };
+        }
+
+        function renderStatsFromSnapshot(statsSnapshot) {
+            const tours = getGuideTours();
+            const bookings = getGuideBookings();
+            const reviews = getGuideReviews();
+            const tourMap = tours.reduce(function (acc, tour) {
+                acc[tour.id] = tour;
+                return acc;
+            }, {});
+
+            const fallback = {
+                my_tours: tours.length,
+                pending_requests: bookings.filter(function (booking) {
+                    return String(booking.status || '').trim().toLowerCase() === 'pending';
+                }).length,
+                accepted: bookings.filter(function (booking) {
+                    return isBookedStatus(booking.status);
+                }).length,
+                total_earnings: bookings.reduce(function (sum, booking) {
+                    if (!isBookedStatus(booking && booking.status)) {
+                        return sum;
+                    }
+                    const tour = tourMap[booking.tourId];
+                    if (!tour) {
+                        return sum;
+                    }
+                    return sum + (Number(tour.price || 0) * parseGuestCount(booking.guests));
+                }, 0),
+                average_rating: reviews.length
+                    ? Number((reviews.reduce(function (sum, review) {
+                        return sum + Number(review.rating || 0);
+                    }, 0) / reviews.length).toFixed(1))
+                    : 0,
+            };
+
+            const stats = statsSnapshot && typeof statsSnapshot === 'object'
+                ? Object.assign({}, fallback, statsSnapshot)
+                : fallback;
+
+            const statTours = qs('#statTours');
+            const statPending = qs('#statPending');
+            const statAccepted = qs('#statAccepted');
+            const statEarnings = qs('#statEarnings');
+            const statRating = qs('#statRating');
+
+            if (statTours) {
+                statTours.textContent = String(stats.my_tours || 0);
             }
-            const tour = tourMap[booking.tourId];
-            if (!tour) {
-                return sum;
+            if (statPending) {
+                statPending.textContent = String(stats.pending_requests || 0);
             }
-            return sum + (Number(tour.price || 0) * parseGuestCount(booking.guests));
-        }, 0);
-        const averageRating = reviews.length
-            ? (reviews.reduce(function (sum, review) {
-                return sum + Number(review.rating || 0);
-            }, 0) / reviews.length).toFixed(1)
-            : '0.0';
-
-        const statTours = qs('#statTours');
-        const statPending = qs('#statPending');
-        const statAccepted = qs('#statAccepted');
-        const statEarnings = qs('#statEarnings');
-        const statRating = qs('#statRating');
-
-        if (statTours) {
-            statTours.textContent = String(totalTours);
-        }
-        if (statPending) {
-            statPending.textContent = String(pending);
-        }
-        if (statAccepted) {
-            statAccepted.textContent = String(accepted);
-        }
-        if (statEarnings) {
-            statEarnings.textContent = formatPeso(earnings);
-        }
-        if (statRating) {
-            statRating.textContent = String(averageRating);
+            if (statAccepted) {
+                statAccepted.textContent = String(stats.accepted || 0);
+            }
+            if (statEarnings) {
+                statEarnings.textContent = formatPeso(Number(stats.total_earnings || 0));
+            }
+            if (statRating) {
+                statRating.textContent = Number(stats.average_rating || 0).toFixed(1);
+            }
         }
 
-        renderPendingBookingsSummary(qs('#dashboardPendingList'));
-        renderReviewsSummary(qs('#dashboardReviewList'));
+        function renderDashboard(statsSnapshot) {
+            renderStatsFromSnapshot(statsSnapshot);
+            renderPendingBookingsSummary(qs('#dashboardPendingList'));
+            renderReviewsSummary(qs('#dashboardReviewList'));
+        }
+
+        renderDashboard();
+
+        Promise.allSettled([
+            apiRequest('/guide/tours'),
+            apiRequest('/guide/booking-requests'),
+            apiRequest('/guide/dashboard')
+        ]).then(function (results) {
+            const toursResult = results[0];
+            const bookingsResult = results[1];
+            const dashboardResult = results[2];
+
+            const toursPayload = toursResult && toursResult.status === 'fulfilled' ? toursResult.value : null;
+            const bookingsPayload = bookingsResult && bookingsResult.status === 'fulfilled' ? bookingsResult.value : null;
+            const dashboardPayload = dashboardResult && dashboardResult.status === 'fulfilled' ? dashboardResult.value : null;
+
+            if (toursPayload && Array.isArray(toursPayload.listings)) {
+                setGuideTours(toursPayload.listings.map(mapApiListingToGuideTour));
+            }
+            if (bookingsPayload && Array.isArray(bookingsPayload.bookings)) {
+                setGuideBookings(bookingsPayload.bookings.map(normalizeDashboardBooking));
+            }
+            if (dashboardPayload && Array.isArray(dashboardPayload.reviews)) {
+                setGuideReviews(dashboardPayload.reviews.map(normalizeDashboardReview));
+            }
+
+            renderDashboard(dashboardPayload && dashboardPayload.stats ? dashboardPayload.stats : null);
+        });
     }
 
     function initGlobalActions() {
@@ -2978,23 +3370,39 @@
         }
     }
 
-    function init() {
-        ensureSeedData();
-        initSidebar();
-        initTopbarScroll();
-        setActiveNavigation();
-        initGuideNotifications();
-        initGlobalActions();
-
-        initDashboardPage();
-        initRequestPostFeedPage();
-        initBookingRequestsPage();
-        initToursPage();
-        initMessagesPage();
-        initProfilePage();
-
-        window.setInterval(syncGuideNotificationsFromApi, 30000);
+    function runInitStep(label, action) {
+        try {
+            action();
+        } catch (error) {
+            console.error('Guide init step failed:', label, error);
+        }
     }
 
-    document.addEventListener('DOMContentLoaded', init);
+    function init() {
+        // Bind global actions first so critical controls (like logout) keep working even if other modules fail.
+        runInitStep('global-actions', initGlobalActions);
+        runInitStep('seed-data', ensureSeedData);
+        runInitStep('sync-guide-profile', syncGuideProfileFromApi);
+        runInitStep('sidebar', initSidebar);
+        runInitStep('topbar-scroll', initTopbarScroll);
+        runInitStep('active-navigation', setActiveNavigation);
+        runInitStep('notifications', initGuideNotifications);
+
+        runInitStep('dashboard-page', initDashboardPage);
+        runInitStep('request-feed-page', initRequestPostFeedPage);
+        runInitStep('booking-requests-page', initBookingRequestsPage);
+        runInitStep('tours-page', initToursPage);
+        runInitStep('messages-page', initMessagesPage);
+        runInitStep('profile-page', initProfilePage);
+
+        runInitStep('notifications-polling', function () {
+            window.setInterval(syncGuideNotificationsFromApi, 30000);
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
+    }
 })();

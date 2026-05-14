@@ -136,6 +136,10 @@
                             <label class="full">
                                 <span class="field-label">Main Cover & Gallery Images (3 to 5)</span>
                                 <input id="tourImages" class="input-soft" type="file" accept="image/*" multiple>
+                                <div class="guide-image-tools mt-2">
+                                    <small id="tourImageMeta" class="text-muted">No images selected yet.</small>
+                                    <button id="tourClearImages" class="btn-soft py-1 px-2" type="button">Clear images</button>
+                                </div>
                                 <div id="tourImagePreview" class="post-gallery guide-gallery mt-2"></div>
                             </label>
 

@@ -122,6 +122,12 @@
                                 </div>
                             </div>
                         </section>
+
+                        <section class="activity-listing mt-3">
+                            <h2 class="h4 mb-2">Ratings &amp; Reviews</h2>
+                            <p id="tourPreviewReviewEmpty" class="small text-muted mb-0">No public reviews yet for this listing.</p>
+                            <div id="tourPreviewReviewList" class="guide-layout-grid mt-2"></div>
+                        </section>
                     </section>
 
                     <aside class="booking-sticky">
@@ -137,6 +143,7 @@
                         <div class="booking-field">
                             <label class="field-label" for="previewGuests">Guests</label>
                             <select class="select-soft" id="previewGuests">
+                                <option value="" selected>Select guests</option>
                                 <option value="1">Adult x 1</option>
                                 <option value="2">Adult x 2</option>
                                 <option value="3">Adult x 3</option>
@@ -152,6 +159,7 @@
                         <div class="booking-field">
                             <label class="field-label" for="previewTime">Select time</label>
                             <select class="select-soft" id="previewTime">
+                                <option value="" selected>Select time slot</option>
                                 <option value="08:00 AM">08:00 AM</option>
                                 <option value="09:00 AM">09:00 AM</option>
                                 <option value="01:00 PM">01:00 PM</option>
@@ -159,7 +167,8 @@
                         </div>
 
                         <button id="previewCheckAvailability" class="btn-gold w-100" type="button">Check Availability</button>
-                        <button id="previewBookNow" class="btn-charcoal w-100 mt-2" type="button">Book Now</button>
+                        <button id="previewBookNow" class="btn-charcoal w-100 mt-2" type="button" disabled title="Please check availability first">Book Now</button>
+                        <p id="previewBookNowHint" class="booking-helper-text text-muted mt-2 mb-0">Please check availability first</p>
 
                         <div class="booking-summary">
                             <p class="small mb-1"><i class="fa-regular fa-circle-check text-success me-2"></i>Free cancellation</p>

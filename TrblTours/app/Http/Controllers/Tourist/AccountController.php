@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Hash;
 
 class AccountController extends Controller
 {
-    private const DEFAULT_AVATAR = '/images/13.jpg';
+    private const DEFAULT_AVATAR = '/images/manila.jpg';
 
     public function show(Request $request): JsonResponse
     {

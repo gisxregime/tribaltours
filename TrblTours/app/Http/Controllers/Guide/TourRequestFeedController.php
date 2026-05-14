@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Guide;
 use App\Events\TourRequestUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\TourRequest;
+use App\Models\User;
 use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class TourRequestFeedController extends Controller
     {
         $requests = TourRequest::query()
             ->with(['tourist', 'selectedGuide'])
-            ->whereIn('status', ['open', 'negotiating', 'closed'])
+            ->whereIn('status', ['open', 'negotiating'])
             ->latest()
             ->limit(100)
             ->get()
@@ -37,6 +38,28 @@ class TourRequestFeedController extends Controller
 
     public function comment(Request $request, TourRequest $tourRequest): JsonResponse
     {
+        $guideId = (int) $request->user()->id;
+        if ($tourRequest->selected_guide_id) {
+            if ((int) $tourRequest->selected_guide_id !== $guideId) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'This negotiation is private to the selected guide and tourist.',
+                ], 403);
+            }
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'Negotiation is locked after guide selection. Continue in private chat.',
+            ], 422);
+        }
+
+        if (!in_array((string) $tourRequest->status, ['open', 'negotiating'], true)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'This request is no longer open for negotiation.',
+            ], 422);
+        }
+
         $payload = $request->validate([
             'text' => ['required', 'string', 'max:2000'],
             'offer_amount' => ['nullable', 'numeric', 'min:0'],
@@ -48,7 +71,10 @@ class TourRequestFeedController extends Controller
         $comments[] = [
             'id' => (string) Str::uuid(),
             'guideId' => (string) $request->user()->id,
+            'authorId' => (string) $request->user()->id,
+            'authorRole' => 'guide',
             'guideName' => trim((string) $request->user()->name),
+            'guideAvatar' => $this->resolveAvatarPath($request->user()->avatar_path),
             'text' => trim((string) $payload['text']),
             'offerAmount' => isset($payload['offer_amount']) ? (float) $payload['offer_amount'] : null,
             'createdAt' => now()->toISOString(),
@@ -93,7 +119,22 @@ class TourRequestFeedController extends Controller
             $tourRequest->province,
         ]);
 
-        $comments = array_values(array_filter(array_map(function ($entry) {
+        $rawComments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
+        $guideIds = collect($rawComments)->map(function ($entry) {
+            if (!is_array($entry) || !isset($entry['guideId'])) {
+                return null;
+            }
+
+            $value = (int) $entry['guideId'];
+            return $value > 0 ? $value : null;
+        })->filter()->unique()->values();
+
+        $guideLookup = User::query()
+            ->whereIn('id', $guideIds)
+            ->get()
+            ->keyBy('id');
+
+        $comments = array_values(array_filter(array_map(function ($entry) use ($guideLookup, $tourist) {
             if (!is_array($entry)) {
                 return null;
             }
@@ -103,15 +144,24 @@ class TourRequestFeedController extends Controller
                 return null;
             }
 
+            $guideIdValue = isset($entry['guideId']) ? (int) $entry['guideId'] : 0;
+            $guideId = $guideIdValue > 0 ? (string) $guideIdValue : null;
+            $guideModel = $guideId !== null ? $guideLookup->get($guideIdValue) : null;
+
             return [
                 'id' => (string) ($entry['id'] ?? Str::uuid()),
-                'guideId' => isset($entry['guideId']) ? (string) $entry['guideId'] : null,
-                'guideName' => trim((string) ($entry['guideName'] ?? 'Guide')),
+                'guideId' => $guideId,
+                'guideName' => trim((string) ($guideModel?->name ?? ($tourist?->name ?? ($entry['guideName'] ?? 'Guide')))),
+                'guideAvatar' => $this->resolveAvatarPath(
+                    $guideModel?->avatar_path
+                        ?? ($guideId === null ? $tourist?->avatar_path : null)
+                        ?? ($entry['guideAvatar'] ?? null)
+                ),
                 'text' => $text,
                 'offerAmount' => isset($entry['offerAmount']) ? (float) $entry['offerAmount'] : null,
                 'createdAt' => (string) ($entry['createdAt'] ?? now()->toISOString()),
             ];
-        }, is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [])));
+        }, $rawComments)));
 
         return [
             'id' => (string) $tourRequest->id,
@@ -130,6 +180,7 @@ class TourRequestFeedController extends Controller
             'status' => (string) $tourRequest->status,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
+            'selectedGuideAvatar' => $this->resolveAvatarPath($selectedGuide?->avatar_path),
             'comments' => $comments,
             'createdAt' => optional($tourRequest->created_at)->toISOString(),
             'updatedAt' => optional($tourRequest->updated_at)->toISOString(),

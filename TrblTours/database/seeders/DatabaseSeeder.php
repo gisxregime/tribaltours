@@ -77,5 +77,9 @@ class DatabaseSeeder extends Seeder
         $conversation->update([
             'last_message_at' => now(),
         ]);
+
+        $this->call([
+            MessagingFeatureTestSeeder::class,
+        ]);
     }
 }

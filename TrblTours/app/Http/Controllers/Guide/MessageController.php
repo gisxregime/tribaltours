@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class MessageController extends Controller
@@ -17,20 +18,33 @@ class MessageController extends Controller
     {
         $conversations = Conversation::query()
             ->where('guide_id', $request->user()->id)
-            ->with(['tourist', 'messages' => function ($query) {
-                $query->latest();
-            }])
-            ->latest('last_message_at')
-            ->limit(100)
-            ->get()
-            ->map(function (Conversation $conversation) use ($request) {
-                return $this->presentConversationSummary($conversation, (int) $request->user()->id);
+            ->with(['tourist'])
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $summaries = $conversations
+            ->filter(function (Conversation $conversation) {
+                return (int) $conversation->tourist_id > 0;
+            })
+            ->groupBy('tourist_id')
+            ->map(function (Collection $group) use ($request) {
+                return $this->presentConversationGroupSummary($group, (int) $request->user()->id);
+            })
+            ->filter()
+            ->sortByDesc('sortTimestamp')
+            ->values()
+            ->map(function (array $summary) {
+                unset($summary['sortTimestamp']);
+
+                return $summary;
             })
             ->values();
 
         return response()->json([
             'ok' => true,
-            'conversations' => $conversations,
+            'conversations' => $summaries,
             'pusher' => [
                 'key' => env('PUSHER_APP_KEY'),
                 'cluster' => env('PUSHER_APP_CLUSTER', 'ap1'),
@@ -42,9 +56,24 @@ class MessageController extends Controller
     {
         abort_unless($conversation->guide_id === Auth::id(), 403);
 
-        $conversation->load(['tourist', 'messages.sender']);
+        $pairConversations = Conversation::query()
+            ->where('guide_id', $conversation->guide_id)
+            ->where('tourist_id', $conversation->tourist_id)
+            ->with('tourist')
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->get();
+
+        $pairConversationIds = $pairConversations->pluck('id')->map(function ($id) {
+            return (int) $id;
+        })->filter()->values();
+
+        if ($pairConversationIds->isEmpty()) {
+            $pairConversationIds = collect([(int) $conversation->id]);
+        }
+
         Message::query()
-            ->where('conversation_id', $conversation->id)
+            ->whereIn('conversation_id', $pairConversationIds->all())
             ->where('sender_id', '!=', $request->user()->id)
             ->where('is_read', false)
             ->update([
@@ -52,18 +81,25 @@ class MessageController extends Controller
                 'read_at' => now(),
             ]);
 
-        $messages = $conversation->messages()
+        $messages = Message::query()
+            ->whereIn('conversation_id', $pairConversationIds->all())
             ->with('sender')
-            ->oldest()
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->get()
             ->map(function (Message $message) use ($request) {
                 return $this->presentMessage($message, (int) $request->user()->id);
             })
             ->values();
 
+        $summary = $this->presentConversationGroupSummary(
+            $pairConversations->isNotEmpty() ? $pairConversations : collect([$conversation]),
+            (int) $request->user()->id
+        );
+
         return response()->json([
             'ok' => true,
-            'conversation' => $this->presentConversationSummary($conversation->fresh(['tourist', 'messages']), (int) $request->user()->id),
+            'conversation' => $summary ? collect($summary)->except(['sortTimestamp'])->all() : null,
             'messages' => $messages,
             'pusher' => [
                 'key' => env('PUSHER_APP_KEY'),
@@ -76,26 +112,31 @@ class MessageController extends Controller
     {
         abort_unless($conversation->guide_id === Auth::id(), 403);
 
+        $canonicalConversation = $this->canonicalConversationForPair(
+            (int) $conversation->guide_id,
+            (int) $conversation->tourist_id
+        ) ?: $conversation;
+
         $payload = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
         ]);
 
         $message = Message::query()->create([
-            'conversation_id' => $conversation->id,
+            'conversation_id' => $canonicalConversation->id,
             'sender_id' => $request->user()->id,
             'body' => trim((string) $payload['body']),
             'is_read' => false,
         ]);
 
-        $conversation->update(['last_message_at' => now()]);
+        $canonicalConversation->update(['last_message_at' => now()]);
 
-        $conversation->loadMissing('tourist');
+        $canonicalConversation->loadMissing('tourist');
         DomainNotification::notifyUser(
-            $conversation->tourist,
+            $canonicalConversation->tourist,
             'message.received',
             trim((string) $request->user()->name) . ' sent you a new message.',
             [
-                'conversationId' => (string) $conversation->id,
+                'conversationId' => (string) $canonicalConversation->id,
                 'senderId' => (string) $request->user()->id,
             ]
         );
@@ -108,25 +149,101 @@ class MessageController extends Controller
         ], 201);
     }
 
-    private function presentConversationSummary(Conversation $conversation, int $userId): array
+    private function presentConversationGroupSummary(Collection $group, int $userId): ?array
     {
-        $tourist = $conversation->tourist;
-        $latest = $conversation->messages->sortByDesc('created_at')->first();
-        $unread = $conversation->messages->filter(function (Message $message) use ($userId) {
-            return (int) $message->sender_id !== $userId && !$message->is_read;
-        })->count();
+        if ($group->isEmpty()) {
+            return null;
+        }
+
+        $canonical = $group->sortByDesc(function (Conversation $conversation) {
+            return (int) (
+                optional($conversation->last_message_at)->getTimestamp()
+                ?? optional($conversation->updated_at)->getTimestamp()
+                ?? 0
+            );
+        })->first();
+
+        if (!$canonical || (int) $canonical->tourist_id <= 0) {
+            return null;
+        }
+
+        $conversationIds = $group->pluck('id')->map(function ($id) {
+            return (int) $id;
+        })->filter()->values();
+
+        if ($conversationIds->isEmpty()) {
+            return null;
+        }
+
+        $latest = Message::query()
+            ->whereIn('conversation_id', $conversationIds->all())
+            ->latest('created_at')
+            ->first();
+
+        $unread = (int) Message::query()
+            ->whereIn('conversation_id', $conversationIds->all())
+            ->where('sender_id', '!=', $userId)
+            ->where('is_read', false)
+            ->count();
+
+        $tourist = $canonical->tourist;
+        $sortTimestamp = (int) (
+            optional($latest?->created_at)->getTimestamp()
+            ?? optional($canonical->last_message_at)->getTimestamp()
+            ?? optional($canonical->updated_at)->getTimestamp()
+            ?? 0
+        );
 
         return [
-            'id' => (string) $conversation->id,
-            'name' => trim((string) ($tourist->name ?? 'Tourist')),
-            'avatar' => (string) (($tourist && $tourist->avatar_path) ? $tourist->avatar_path : 'images/manila.jpg'),
+            'id' => (string) $canonical->id,
+            'name' => trim((string) ($tourist?->name ?? 'Tourist')),
+            'avatar' => $this->resolveAvatarPath($tourist?->avatar_path),
             'last' => (string) ($latest?->body ?? ''),
-            'time' => optional($latest?->created_at)->toISOString() ?: optional($conversation->updated_at)->toISOString(),
+            'time' => optional($latest?->created_at)->toISOString()
+                ?: optional($canonical->last_message_at)->toISOString()
+                ?: optional($canonical->updated_at)->toISOString(),
             'unread' => $unread,
-            'tourRequestId' => $conversation->tour_request_id ? (string) $conversation->tour_request_id : null,
-            'touristId' => $conversation->tourist_id ? (string) $conversation->tourist_id : null,
-            'guideId' => $conversation->guide_id ? (string) $conversation->guide_id : null,
+            'tourRequestId' => $canonical->tour_request_id ? (string) $canonical->tour_request_id : null,
+            'touristId' => $canonical->tourist_id ? (string) $canonical->tourist_id : null,
+            'guideId' => $canonical->guide_id ? (string) $canonical->guide_id : null,
+            'sortTimestamp' => $sortTimestamp,
         ];
+    }
+
+    private function canonicalConversationForPair(int $guideId, int $touristId): ?Conversation
+    {
+        return Conversation::query()
+            ->where('guide_id', $guideId)
+            ->where('tourist_id', $touristId)
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $value = trim((string) $path);
+        if ($value === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1) {
+            return $value;
+        }
+
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        if (str_starts_with($value, 'images/')) {
+            return '/' . $value;
+        }
+
+        if (str_starts_with($value, 'storage/')) {
+            return '/' . $value;
+        }
+
+        return '/storage/' . ltrim($value, '/');
     }
 
     private function presentMessage(Message $message, int $userId): array
@@ -137,6 +254,7 @@ class MessageController extends Controller
             'text' => (string) ($message->body ?? ''),
             'senderId' => (string) $message->sender_id,
             'senderName' => trim((string) ($message->sender?->name ?? 'User')),
+            'senderAvatar' => $this->resolveAvatarPath($message->sender?->avatar_path),
             'isRead' => (bool) $message->is_read,
             'readAt' => optional($message->read_at)->toISOString(),
             'createdAt' => optional($message->created_at)->toISOString(),

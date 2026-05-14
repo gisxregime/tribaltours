@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\TourRequest;
+use App\Models\User;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -26,7 +27,22 @@ class TourRequestUpdated implements ShouldBroadcastNow
             $tourRequest->province,
         ]);
         $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
-        $comments = array_values(array_filter(array_map(function ($entry) {
+        $rawComments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
+        $guideIds = collect($rawComments)->map(function ($entry) {
+            if (!is_array($entry) || !isset($entry['guideId'])) {
+                return null;
+            }
+
+            $value = (int) $entry['guideId'];
+            return $value > 0 ? $value : null;
+        })->filter()->unique()->values();
+
+        $guideLookup = User::query()
+            ->whereIn('id', $guideIds)
+            ->get()
+            ->keyBy('id');
+
+        $comments = array_values(array_filter(array_map(function ($entry) use ($guideLookup, $tourist) {
             if (!is_array($entry)) {
                 return null;
             }
@@ -36,15 +52,24 @@ class TourRequestUpdated implements ShouldBroadcastNow
                 return null;
             }
 
+            $guideIdValue = isset($entry['guideId']) ? (int) $entry['guideId'] : 0;
+            $guideId = $guideIdValue > 0 ? (string) $guideIdValue : null;
+            $guideModel = $guideId !== null ? $guideLookup->get($guideIdValue) : null;
+
             return [
                 'id' => (string) ($entry['id'] ?? uniqid('comment-', true)),
-                'guideId' => isset($entry['guideId']) ? (string) $entry['guideId'] : null,
-                'guideName' => trim((string) ($entry['guideName'] ?? 'Guide')),
+                'guideId' => $guideId,
+                'guideName' => trim((string) ($guideModel?->name ?? ($tourist?->name ?? ($entry['guideName'] ?? 'Guide')))),
+                'guideAvatar' => $this->resolveAvatarPath(
+                    $guideModel?->avatar_path
+                        ?? ($guideId === null ? $tourist?->avatar_path : null)
+                        ?? ($entry['guideAvatar'] ?? null)
+                ),
                 'text' => $text,
                 'offerAmount' => isset($entry['offerAmount']) ? (float) $entry['offerAmount'] : null,
                 'createdAt' => (string) ($entry['createdAt'] ?? now()->toISOString()),
             ];
-        }, is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [])));
+        }, $rawComments)));
 
         $this->requestPayload = [
             'id' => (string) $tourRequest->id,
@@ -63,6 +88,7 @@ class TourRequestUpdated implements ShouldBroadcastNow
             'status' => (string) $tourRequest->status,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
+            'selectedGuideAvatar' => $this->resolveAvatarPath($selectedGuide?->avatar_path),
             'comments' => $comments,
             'createdAt' => optional($tourRequest->created_at)->toISOString(),
             'updatedAt' => optional($tourRequest->updated_at)->toISOString(),

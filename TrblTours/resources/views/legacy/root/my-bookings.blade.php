@@ -106,7 +106,7 @@
                     <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
                 </div>
                 <form id="reviewForm" class="modal-body">
-                    <p class="text-muted">How was your Mt. Apo hike experience?</p>
+                    <p class="text-muted" data-review-prompt>How was your trip experience?</p>
                     <div class="d-flex gap-2 mb-3" style="font-size:1.6rem; color:#b8ad96;">
                         <button type="button" class="btn btn-light" data-review-star="1">★</button>
                         <button type="button" class="btn btn-light" data-review-star="2">★</button>
@@ -139,6 +139,45 @@
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Keep Booking</button>
                     <button id="confirmCancelBookingBtn" class="btn-danger" type="button"><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="bookingReceiptModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 mb-0">Booking Receipt</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-5 small text-muted">Tour name</dt>
+                        <dd class="col-7 mb-2" id="receiptTourName">-</dd>
+
+                        <dt class="col-5 small text-muted">Booking date</dt>
+                        <dd class="col-7 mb-2" id="receiptBookingDate">-</dd>
+
+                        <dt class="col-5 small text-muted">Guests count</dt>
+                        <dd class="col-7 mb-2" id="receiptGuestCount">-</dd>
+
+                        <dt class="col-5 small text-muted">Total amount paid</dt>
+                        <dd class="col-7 mb-2" id="receiptTotalPaid">-</dd>
+
+                        <dt class="col-5 small text-muted">Payment method</dt>
+                        <dd class="col-7 mb-2" id="receiptPaymentMethod">-</dd>
+
+                        <dt class="col-5 small text-muted">Transaction ID / Ref</dt>
+                        <dd class="col-7 mb-2" id="receiptReference">-</dd>
+
+                        <dt class="col-5 small text-muted">Booking status</dt>
+                        <dd class="col-7 mb-0" id="receiptBookingStatus">-</dd>
+                    </dl>
+                    <p id="receiptAvailabilityMessage" class="small text-muted mt-3 mb-0" style="display:none;">Receipt will be available once payment is confirmed.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

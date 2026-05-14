@@ -17,8 +17,9 @@ class TourListingUpdated implements ShouldBroadcastNow
 
     public function __construct(TourListing $tourListing, string $action = 'updated')
     {
-        $tourListing->loadMissing('guide');
+        $tourListing->loadMissing(['guide.guideProfile']);
         $guide = $tourListing->guide;
+        $guideProfile = $guide?->guideProfile;
         $publicReviews = $tourListing->reviews()->where('is_public', true);
         $liveReviews = (int) $publicReviews->count();
         $liveRating = $publicReviews->avg('rating');
@@ -61,18 +62,27 @@ class TourListingUpdated implements ShouldBroadcastNow
             'badge' => (string) ($tourListing->category ?: 'Featured'),
             'image' => $coverImage,
             'coverImage' => $coverImage,
-            'guideAvatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
+            'guideAvatar' => $this->resolveAvatarPath($guide?->avatar_path),
+            'guidePhoto' => $this->resolveAvatarPath($guide?->avatar_path),
             'tags' => $tags,
             'latest' => optional($tourListing->updated_at)->getTimestamp() ?: time(),
             'provider' => trim((string) ($guide->name ?? 'Guide')),
             'durationHours' => (string) ($tourListing->duration_label ?: 'Flexible'),
-            'languages' => (string) ($tourListing->languages ?: 'English, Filipino'),
+            'languages' => (string) ($guideProfile?->languages_spoken ?: $tourListing->languages ?: 'English, Filipino'),
             'meetingPoint' => (string) ($tourListing->meeting_point ?: 'Main tourist pickup point'),
             'description' => (string) ($tourListing->short_description ?: 'Custom guided experience.'),
             'gallery' => $gallery,
             'region' => 'all',
             'status' => (string) ($tourListing->status ?: 'draft'),
             'isActive' => (bool) ($tourListing->is_active ?? false),
+            'guideBio' => (string) ($guide?->bio ?? ''),
+            'guideLocation' => (string) ($guide?->location ?? ''),
+            'guideContact' => (string) ($guide?->phone ?? ''),
+            'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
+            'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
+            'guideExperienceYears' => (int) ($guideProfile?->years_of_experience ?? 1),
+            'guideSocial' => (string) (is_array($guide?->account_settings) ? ($guide->account_settings['social_links'] ?? '') : ''),
+            'guideVerified' => (string) ($guide?->guide_verification_status ?? '') === 'approved',
         ];
     }
 
@@ -93,5 +103,19 @@ class TourListingUpdated implements ShouldBroadcastNow
         return [
             'tour' => $this->tourPayload,
         ];
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }

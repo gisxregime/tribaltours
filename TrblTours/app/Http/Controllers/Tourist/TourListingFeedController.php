@@ -14,7 +14,7 @@ class TourListingFeedController extends Controller
         $this->ensureLegacyCatalogListings();
 
         $tours = TourListing::query()
-            ->with('guide')
+            ->with(['guide.guideProfile'])
             ->withCount([
                 'reviews as reviews_live_count' => function ($query) {
                     $query->where('is_public', true);
@@ -43,7 +43,7 @@ class TourListingFeedController extends Controller
     {
         abort_unless($tourListing->status === 'published' && $tourListing->is_active, 404);
 
-        $tourListing->loadMissing('guide')
+        $tourListing->loadMissing(['guide.guideProfile'])
             ->loadCount([
                 'reviews as reviews_live_count' => function ($query) {
                     $query->where('is_public', true);
@@ -57,13 +57,14 @@ class TourListingFeedController extends Controller
 
         return response()->json([
             'ok' => true,
-            'tour' => $this->presentTour($tourListing),
+            'tour' => $this->presentTour($tourListing, true),
         ]);
     }
 
-    private function presentTour(TourListing $tourListing): array
+    private function presentTour(TourListing $tourListing, bool $withRecentReviews = false): array
     {
         $guide = $tourListing->guide;
+        $guideProfile = $guide?->guideProfile;
         $liveRating = $tourListing->getAttribute('reviews_live_avg');
         $liveReviews = $tourListing->getAttribute('reviews_live_count');
         $reviews = $liveReviews !== null
@@ -90,7 +91,7 @@ class TourListingFeedController extends Controller
             return trim((string) $tag);
         }, is_array($tourListing->tags) ? $tourListing->tags : [])));
 
-        return [
+        $payload = [
             'id' => (string) $tourListing->id,
             'slug' => (string) $tourListing->slug,
             'legacyKey' => (string) $tourListing->slug,
@@ -107,12 +108,13 @@ class TourListingFeedController extends Controller
             'badge' => (string) ($tourListing->category ?: 'Featured'),
             'image' => $coverImage,
             'coverImage' => $coverImage,
-            'guideAvatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
+            'guideAvatar' => $this->resolveAvatarPath($guide?->avatar_path),
+            'guidePhoto' => $this->resolveAvatarPath($guide?->avatar_path),
             'tags' => $tags,
             'latest' => optional($tourListing->updated_at)->getTimestamp() ?: time(),
             'provider' => trim((string) ($guide->name ?? 'Guide')),
             'durationHours' => (string) ($tourListing->duration_label ?: 'Flexible'),
-            'languages' => (string) ($tourListing->languages ?: 'English, Filipino'),
+            'languages' => (string) ($guideProfile?->languages_spoken ?: $tourListing->languages ?: 'English, Filipino'),
             'meetingPoint' => (string) ($tourListing->meeting_point ?: 'Main tourist pickup point'),
             'description' => (string) ($tourListing->short_description ?: 'Custom guided experience.'),
             'gallery' => $gallery,
@@ -128,10 +130,14 @@ class TourListingFeedController extends Controller
             'excludes' => (string) ($tourListing->excludes ?: ''),
             'requirements' => (string) ($tourListing->requirements ?: ''),
             'safetyInfo' => (string) ($tourListing->safety_info ?: ''),
-            'guideVerified' => false,
-            'guideExperienceYears' => 1,
-            'guideContact' => (string) (($guide && $guide->phone) ? $guide->phone : ''),
-            'guideSocial' => '',
+            'guideVerified' => (string) ($guide?->guide_verification_status ?? '') === 'approved',
+            'guideExperienceYears' => (int) ($guideProfile?->years_of_experience ?? 1),
+            'guideContact' => (string) ($guide?->phone ?? ''),
+            'guideSocial' => (string) (is_array($guide?->account_settings) ? ($guide->account_settings['social_links'] ?? '') : ''),
+            'guideBio' => (string) ($guide?->bio ?? ''),
+            'guideLocation' => (string) ($guide?->location ?? ''),
+            'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
+            'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
             'weatherSuitability' => (string) ($tourListing->weather_suitability ?: ''),
             'bestSeason' => (string) ($tourListing->best_season ?: ''),
             'childFriendly' => (bool) $tourListing->child_friendly,
@@ -139,6 +145,29 @@ class TourListingFeedController extends Controller
             'status' => (string) $tourListing->status,
             'isActive' => (bool) $tourListing->is_active,
         ];
+
+        if ($withRecentReviews) {
+            $payload['recentReviews'] = $tourListing->reviews()
+                ->where('is_public', true)
+                ->with(['tourist:id,name'])
+                ->latest('created_at')
+                ->limit(12)
+                ->get()
+                ->map(function ($review) {
+                    return [
+                        'id' => (string) $review->id,
+                        'touristName' => trim((string) ($review->tourist?->name ?? 'Tourist')) ?: 'Tourist',
+                        'rating' => (int) ($review->rating ?? 0),
+                        'title' => (string) ($review->title ?? ''),
+                        'comment' => (string) ($review->comment ?? ''),
+                        'createdAt' => optional($review->created_at)->toISOString(),
+                    ];
+                })
+                ->values()
+                ->all();
+        }
+
+        return $payload;
     }
 
     private function ensureLegacyCatalogListings(): void
@@ -307,5 +336,19 @@ class TourListingFeedController extends Controller
                 'image' => 'images/carousel3.jpg',
             ],
         ];
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }

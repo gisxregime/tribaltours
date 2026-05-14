@@ -12,6 +12,7 @@ use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -22,15 +23,12 @@ class MessageController extends Controller
     {
         $query = Conversation::query()
             ->where('tourist_id', $request->user()->id)
-            ->with(['guide', 'messages' => function ($query) {
-                $query->latest()->limit(1);
-            }])
-            ->latest('last_message_at');
+            ->with(['guide.guideProfile'])
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id');
 
         if ($request->expectsJson() || $request->wantsJson()) {
-            $conversations = $query->limit(100)->get()->map(function (Conversation $conversation) use ($request) {
-                return $this->presentConversationSummary($conversation, (int) $request->user()->id);
-            })->values();
+            $conversations = $this->buildConversationSummariesForTourist((int) $request->user()->id);
 
             return response()->json([
                 'ok' => true,
@@ -45,18 +43,7 @@ class MessageController extends Controller
 
     public function threads(Request $request): JsonResponse
     {
-        $conversations = Conversation::query()
-            ->where('tourist_id', $request->user()->id)
-            ->with(['guide', 'messages' => function ($query) {
-                $query->latest();
-            }])
-            ->latest('last_message_at')
-            ->limit(100)
-            ->get()
-            ->map(function (Conversation $conversation) use ($request) {
-                return $this->presentConversationSummary($conversation, (int) $request->user()->id);
-            })
-            ->values();
+        $conversations = $this->buildConversationSummariesForTourist((int) $request->user()->id);
 
         return response()->json([
             'ok' => true,
@@ -72,9 +59,24 @@ class MessageController extends Controller
     {
         abort_unless($conversation->tourist_id === Auth::id(), 403);
 
-        $conversation->load(['guide', 'messages.sender']);
+        $pairConversations = Conversation::query()
+            ->where('tourist_id', $conversation->tourist_id)
+            ->where('guide_id', $conversation->guide_id)
+            ->with('guide.guideProfile')
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->get();
+
+        $pairConversationIds = $pairConversations->pluck('id')->map(function ($id) {
+            return (int) $id;
+        })->filter()->values();
+
+        if ($pairConversationIds->isEmpty()) {
+            $pairConversationIds = collect([(int) $conversation->id]);
+        }
+
         Message::query()
-            ->where('conversation_id', $conversation->id)
+            ->whereIn('conversation_id', $pairConversationIds->all())
             ->where('sender_id', '!=', $request->user()->id)
             ->where('is_read', false)
             ->update([
@@ -82,13 +84,25 @@ class MessageController extends Controller
                 'read_at' => now(),
             ]);
 
-        $messages = $conversation->messages()->with('sender')->oldest()->get()->map(function (Message $message) use ($request) {
-            return $this->presentMessage($message, (int) $request->user()->id);
-        })->values();
+        $messages = Message::query()
+            ->whereIn('conversation_id', $pairConversationIds->all())
+            ->with('sender')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function (Message $message) use ($request) {
+                return $this->presentMessage($message, (int) $request->user()->id);
+            })
+            ->values();
+
+        $summary = $this->presentConversationGroupSummary(
+            $pairConversations->isNotEmpty() ? $pairConversations : collect([$conversation]),
+            (int) $request->user()->id
+        );
 
         return response()->json([
             'ok' => true,
-            'conversation' => $this->presentConversationSummary($conversation->fresh(['guide', 'messages']), (int) $request->user()->id),
+            'conversation' => $summary ? collect($summary)->except(['sortTimestamp'])->all() : null,
             'messages' => $messages,
         ]);
     }
@@ -97,26 +111,31 @@ class MessageController extends Controller
     {
         abort_unless($conversation->tourist_id === Auth::id(), 403);
 
+        $canonicalConversation = $this->canonicalConversationForPair(
+            (int) $conversation->tourist_id,
+            (int) $conversation->guide_id
+        ) ?: $conversation;
+
         $payload = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
         ]);
 
         $message = Message::query()->create([
-            'conversation_id' => $conversation->id,
+            'conversation_id' => $canonicalConversation->id,
             'sender_id' => $request->user()->id,
             'body' => trim((string) $payload['body']),
             'is_read' => false,
         ]);
 
-        $conversation->update(['last_message_at' => now()]);
+        $canonicalConversation->update(['last_message_at' => now()]);
 
-        $conversation->loadMissing('guide');
+        $canonicalConversation->loadMissing('guide');
         DomainNotification::notifyUser(
-            $conversation->guide,
+            $canonicalConversation->guide,
             'message.received',
             trim((string) $request->user()->name) . ' sent you a new message.',
             [
-                'conversationId' => (string) $conversation->id,
+                'conversationId' => (string) $canonicalConversation->id,
                 'senderId' => (string) $request->user()->id,
             ]
         );
@@ -145,16 +164,18 @@ class MessageController extends Controller
             abort_unless($tourRequest->tourist_id === Auth::id(), 403);
         }
 
-        $conversation = Conversation::query()->firstOrCreate(
-            [
+        $conversation = $this->canonicalConversationForPair((int) $request->user()->id, (int) $guide->id);
+
+        if (!$conversation) {
+            $conversation = Conversation::query()->create([
                 'tourist_id' => $request->user()->id,
                 'guide_id' => $guide->id,
                 'tour_request_id' => $tourRequestId,
-            ],
-            [
                 'last_message_at' => now(),
-            ]
-        );
+            ]);
+        } elseif (!$conversation->tour_request_id && $tourRequestId) {
+            $conversation->update(['tour_request_id' => $tourRequestId]);
+        }
 
         $body = trim((string) ($payload['body'] ?? ''));
         if ($body !== '') {
@@ -281,6 +302,7 @@ class MessageController extends Controller
     private function presentConversationSummary(Conversation $conversation, int $userId): array
     {
         $guide = $conversation->guide;
+        $guideProfile = $guide?->guideProfile;
         $latest = $conversation->messages->sortByDesc('created_at')->first();
         $unread = $conversation->messages->filter(function (Message $message) use ($userId) {
             return (int) $message->sender_id !== $userId && !$message->is_read;
@@ -288,13 +310,32 @@ class MessageController extends Controller
 
         return [
             'id' => (string) $conversation->id,
-            'name' => trim((string) ($guide->name ?? 'Guide')),
-            'avatar' => (string) (($guide && $guide->avatar_path) ? $guide->avatar_path : 'images/manila.jpg'),
+            'guideId' => $conversation->guide_id ? (string) $conversation->guide_id : null,
+            'touristId' => $conversation->tourist_id ? (string) $conversation->tourist_id : null,
+            'name' => trim((string) ($guide?->name ?? 'Guide')),
+            'avatar' => $this->resolveAvatarPath($guide?->avatar_path),
+            'guideBio' => (string) ($guide?->bio ?? ''),
+            'guideLocation' => (string) ($guide?->location ?? ''),
+            'guideLanguages' => (string) ($guideProfile?->languages_spoken ?? ''),
+            'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
+            'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
             'last' => (string) ($latest?->body ?? ''),
             'time' => optional($latest?->created_at)->toISOString() ?: optional($conversation->updated_at)->toISOString(),
             'unread' => $unread,
             'tourRequestId' => $conversation->tour_request_id ? (string) $conversation->tour_request_id : null,
         ];
+    }
+
+    private function dedupeConversationsByGuide($conversations)
+    {
+        return $conversations
+            ->filter(function (Conversation $conversation) {
+                return (int) $conversation->guide_id > 0;
+            })
+            ->unique(function (Conversation $conversation) {
+                return (string) $conversation->guide_id;
+            })
+            ->values();
     }
 
     private function presentMessage(Message $message, int $userId): array
@@ -305,9 +346,130 @@ class MessageController extends Controller
             'text' => (string) ($message->body ?? ''),
             'senderId' => (string) $message->sender_id,
             'senderName' => trim((string) ($message->sender?->name ?? 'User')),
+            'senderAvatar' => $this->resolveAvatarPath($message->sender?->avatar_path),
             'isRead' => (bool) $message->is_read,
             'readAt' => optional($message->read_at)->toISOString(),
             'createdAt' => optional($message->created_at)->toISOString(),
         ];
+    }
+
+    private function buildConversationSummariesForTourist(int $touristId): Collection
+    {
+        $conversations = Conversation::query()
+            ->where('tourist_id', $touristId)
+            ->with('guide.guideProfile')
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        return $conversations
+            ->filter(function (Conversation $conversation) {
+                return (int) $conversation->guide_id > 0;
+            })
+            ->groupBy('guide_id')
+            ->map(function (Collection $group) use ($touristId) {
+                return $this->presentConversationGroupSummary($group, $touristId);
+            })
+            ->filter()
+            ->sortByDesc('sortTimestamp')
+            ->values()
+            ->map(function (array $summary) {
+                unset($summary['sortTimestamp']);
+
+                return $summary;
+            });
+    }
+
+    private function presentConversationGroupSummary(Collection $group, int $userId): ?array
+    {
+        if ($group->isEmpty()) {
+            return null;
+        }
+
+        $canonical = $group->sortByDesc(function (Conversation $conversation) {
+            return (int) (
+                optional($conversation->last_message_at)->getTimestamp()
+                ?? optional($conversation->updated_at)->getTimestamp()
+                ?? 0
+            );
+        })->first();
+
+        if (!$canonical || (int) $canonical->guide_id <= 0) {
+            return null;
+        }
+
+        $conversationIds = $group->pluck('id')->map(function ($id) {
+            return (int) $id;
+        })->filter()->values();
+
+        if ($conversationIds->isEmpty()) {
+            return null;
+        }
+
+        $latest = Message::query()
+            ->whereIn('conversation_id', $conversationIds->all())
+            ->latest('created_at')
+            ->first();
+
+        $unread = (int) Message::query()
+            ->whereIn('conversation_id', $conversationIds->all())
+            ->where('sender_id', '!=', $userId)
+            ->where('is_read', false)
+            ->count();
+
+        $guide = $canonical->guide;
+        $guideProfile = $guide?->guideProfile;
+
+        $sortTimestamp = (int) (
+            optional($latest?->created_at)->getTimestamp()
+            ?? optional($canonical->last_message_at)->getTimestamp()
+            ?? optional($canonical->updated_at)->getTimestamp()
+            ?? 0
+        );
+
+        return [
+            'id' => (string) $canonical->id,
+            'guideId' => $canonical->guide_id ? (string) $canonical->guide_id : null,
+            'touristId' => $canonical->tourist_id ? (string) $canonical->tourist_id : null,
+            'name' => trim((string) ($guide?->name ?? 'Guide')),
+            'avatar' => $this->resolveAvatarPath($guide?->avatar_path),
+            'guideBio' => (string) ($guide?->bio ?? ''),
+            'guideLocation' => (string) ($guide?->location ?? ''),
+            'guideLanguages' => (string) ($guideProfile?->languages_spoken ?? ''),
+            'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
+            'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
+            'last' => (string) ($latest?->body ?? ''),
+            'time' => optional($latest?->created_at)->toISOString()
+                ?: optional($canonical->last_message_at)->toISOString()
+                ?: optional($canonical->updated_at)->toISOString(),
+            'unread' => $unread,
+            'tourRequestId' => $canonical->tour_request_id ? (string) $canonical->tour_request_id : null,
+            'sortTimestamp' => $sortTimestamp,
+        ];
+    }
+
+    private function canonicalConversationForPair(int $touristId, int $guideId): ?Conversation
+    {
+        return Conversation::query()
+            ->where('tourist_id', $touristId)
+            ->where('guide_id', $guideId)
+            ->orderByRaw('COALESCE(last_message_at, updated_at) DESC')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }
