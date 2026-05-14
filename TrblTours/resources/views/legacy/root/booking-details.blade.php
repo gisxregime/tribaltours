@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrblTours Booking Details</title>
+    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
+</head>
+
+<body class="account-page" data-page="my-bookings" data-view="booking-details" data-require-auth="true">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="app-root">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header"><div><a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a><small class="text-muted">Tourist Workspace</small></div></div>
+            <nav class="sidebar-nav">
+                <p class="side-label">Navigation</p>
+                <a class="side-link" href="{{ route('explore') }}" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
+                <div class="dropdown"><a class="side-link has-notif" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false"><i class="fa-solid fa-bell notif-bell"></i>Notifications<span class="side-badge" id="notificationBadge">0</span></a><div class="dropdown-menu notification-menu sidebar-notif"><div class="d-flex justify-content-between align-items-center px-2 pb-2 border-bottom"><strong>Notifications</strong><small class="text-muted">Live updates</small></div><div id="notificationList" class="d-grid gap-1 pt-2"></div></div></div>
+                <a class="side-link" href="{{ route('my-posts') }}" data-page="my-posts"><i class="fa-solid fa-clipboard-list"></i>My Posts</a>
+                <a class="side-link" href="{{ route('my-bookings') }}" data-page="my-bookings"><i class="fa-solid fa-ticket"></i>My Bookings</a>
+                <a class="side-link" href="{{ route('likes') }}" data-page="likes"><i class="fa-solid fa-heart"></i>Likes</a>
+                <a class="side-link" href="{{ route('messages') }}" data-page="messages"><i class="fa-solid fa-comments"></i>Messages</a>
+                <p class="side-label">Account</p>
+                <a class="side-link" href="{{ route('profile') }}" data-page="profile"><i class="fa-solid fa-user"></i>Profile</a>
+                <a class="side-link" href="{{ route('settings') }}" data-page="settings"><i class="fa-solid fa-gear"></i>Settings</a>
+            </nav>
+            <div class="sidebar-footer"><button id="logoutBtn" class="logout-btn"><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button></div>
+        </aside>
+
+        <div class="app-main">
+            <header class="topbar" id="topbar"><div class="topbar-left"><button id="sidebarToggle" class="sidebar-toggle d-lg-none" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button><a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a></div></header>
+            <main class="content-wrap account-wrap">
+                <section class="page-header"><p class="page-kicker">Booking Flow</p><h1 class="page-title">Booking Details</h1></section>
+                <div class="flow-wrap">
+                    <section class="flow-card">
+                        <h2 class="h5 mb-2" data-booking-tour-title>Tour Package</h2>
+                        <p class="text-muted mb-3" data-booking-tour-location>Location</p>
+
+                        <form id="bookingDetailsForm">
+                            <div class="row g-3">
+                                <div class="col-md-4"><label class="field-label" for="bookingGuests">Guests</label><input id="bookingGuests" class="input-soft" min="1" type="number" value="1" required></div>
+                                <div class="col-md-4"><label class="field-label" for="bookingDate">Date</label><input id="bookingDate" class="input-soft" type="date" required></div>
+                                <div class="col-md-4"><label class="field-label" for="bookingTime">Time</label><select id="bookingTime" class="select-soft"><option value="08:00 AM">08:00 AM</option><option value="09:00 AM">09:00 AM</option><option value="01:00 PM">01:00 PM</option></select></div>
+                                <div class="col-md-6"><label class="field-label" for="travelerFullName">Full Name</label><input id="travelerFullName" class="input-soft" type="text" required></div>
+                                <div class="col-md-6"><label class="field-label" for="travelerEmail">Email</label><input id="travelerEmail" class="input-soft" type="email" required></div>
+                                <div class="col-md-6"><label class="field-label" for="travelerPhone">Phone Number</label><input id="travelerPhone" class="input-soft" type="tel" required></div>
+                                <div class="col-md-6"><label class="field-label" for="travelerEmergency">Emergency Contact</label><input id="travelerEmergency" class="input-soft" type="text" required></div>
+                                <div class="col-md-12"><label class="field-label" for="travelerNotes">Notes / Request</label><textarea id="travelerNotes" class="input-soft" rows="4" placeholder="Any food, accessibility, or pickup requests"></textarea></div>
+                            </div>
+                            <button class="btn-gold mt-3" type="submit">Continue to Payment</button>
+                        </form>
+                    </section>
+
+                    <aside class="flow-card">
+                        <h3 class="h6 mb-2">Booking Summary</h3>
+                        <p class="mb-1">Package Price: <strong data-booking-tour-price>PHP 0</strong></p>
+                        <p class="mb-1">Subtotal: <strong id="bookingSubtotal">PHP 0</strong></p>
+                        <p class="mb-0">Total: <strong id="bookingTotal">PHP 0</strong></p>
+                    </aside>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ asset('assets/app.js') }}"></script>
+</body>
+
+</html>

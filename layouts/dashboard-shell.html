@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrblTours Guide Shell</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Manrope', 'sans-serif'],
+                        display: ['Sora', 'Manrope', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-[#f4f2ec] text-[#1d1a14] font-sans">
+    <!--
+      Reusable shell scaffold for guide pages.
+      Copy this structure into page files and set active nav item + page title.
+      Sidebar and topbar component references:
+      - ../components/sidebar.html
+      - ../components/topbar.html
+    -->
+    <div class="min-h-screen lg:flex">
+        <aside class="hidden lg:flex lg:w-64 lg:flex-col lg:sticky lg:top-0 lg:h-screen border-r border-[#e9e4d9] bg-[#f6f4ee]"></aside>
+        <div class="flex-1 min-w-0">
+            <header class="sticky top-0 z-30 border-b border-[#e9e4d9] bg-white/90 backdrop-blur"></header>
+            <main class="p-4 md:p-6 xl:p-7">
+                <section class="rounded-2xl border border-[#e6e0d4] bg-white shadow-sm p-6">
+                    <h1 class="font-display text-3xl font-bold">Page Content Slot</h1>
+                    <p class="mt-2 text-[#756b58]">Use this card and page spacing as the baseline visual system for all guide pages.</p>
+                </section>
+            </main>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrblTours Profile</title>
+    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
+</head>
+
+<body class="account-page" data-page="profile" data-require-auth="true">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="app-root">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <small class="text-muted">Tourist Workspace</small>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <p class="side-label">Navigation</p>
+                <a class="side-link" href="{{ route('explore') }}" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
+                <div class="dropdown">
+                    <a class="side-link has-notif" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
+                        <i class="fa-solid fa-bell notif-bell"></i>Notifications
+                        <span class="side-badge" id="notificationBadge">0</span>
+                    </a>
+                    <div class="dropdown-menu notification-menu sidebar-notif">
+                        <div class="d-flex justify-content-between align-items-center px-2 pb-2 border-bottom">
+                            <strong>Notifications</strong>
+                            <small class="text-muted">Live updates</small>
+                        </div>
+                        <div id="notificationList" class="d-grid gap-1 pt-2"></div>
+                    </div>
+                </div>
+                <a class="side-link" href="{{ route('my-posts') }}" data-page="my-posts"><i class="fa-solid fa-clipboard-list"></i>My Posts</a>
+                <a class="side-link" href="{{ route('my-bookings') }}" data-page="my-bookings"><i class="fa-solid fa-ticket"></i>My Bookings</a>
+                <a class="side-link" href="{{ route('likes') }}" data-page="likes"><i class="fa-solid fa-heart"></i>Likes</a>
+                <a class="side-link" href="{{ route('messages') }}" data-page="messages"><i class="fa-solid fa-comments"></i>Messages</a>
+                <p class="side-label">Account</p>
+                <a class="side-link" href="{{ route('profile') }}" data-page="profile"><i class="fa-solid fa-user"></i>Profile</a>
+                <a class="side-link" href="{{ route('settings') }}" data-page="settings"><i class="fa-solid fa-gear"></i>Settings</a>
+            </nav>
+            <div class="sidebar-footer"><button id="logoutBtn" class="logout-btn"><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button></div>
+        </aside>
+
+        <div class="app-main">
+            <header class="topbar" id="topbar">
+                <div class="topbar-left">
+                    <div class="dropdown d-lg-none">
+                        <button class="sidebar-toggle" type="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Open navigation menu">
+                            <i class="fa-solid fa-bars"></i>
+                        </button>
+                        <ul class="dropdown-menu hamburger-dropdown">
+                            <li><h6 class="dropdown-header">Navigation</h6></li>
+                            <li><a class="dropdown-item" href="{{ route('explore') }}"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-bell"></i>Notifications <span class="hamburger-badge">0</span></a></li>
+                            <li><a class="dropdown-item" href="{{ route('my-posts') }}"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
+                            <li><a class="dropdown-item" href="{{ route('my-bookings') }}"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
+                            <li><a class="dropdown-item" href="{{ route('likes') }}"><i class="fa-solid fa-heart"></i>Likes</a></li>
+                            <li><a class="dropdown-item" href="{{ route('messages') }}"><i class="fa-solid fa-comments"></i>Messages</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Account</h6></li>
+                            <li><a class="dropdown-item" href="{{ route('profile') }}"><i class="fa-solid fa-user"></i>Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
+                        </ul>
+                    </div>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                </div>
+            </header>
+
+            <main class="content-wrap account-wrap">
+                <section class="page-header account-header">
+                    <p class="page-kicker">Account</p>
+                    <h1 class="page-title">Profile</h1>
+                </section>
+
+                <section class="profile-grid">
+                    <article class="settings-card account-card">
+                        <form id="profileForm">
+                            <div class="avatar-upload">
+                                <img id="avatarPreview" src="{{ asset('images/13.jpg') }}" alt="Avatar">
+                                <div>
+                                    <label class="field-label" for="avatarInput">Avatar Upload</label>
+                                    <input id="avatarInput" class="form-control" type="file" accept="image/*">
+                                </div>
+                            </div>
+
+                            <div class="row g-3">
+                                <div class="col-md-6"><label class="field-label" for="nameInput">Name</label><input id="nameInput" class="input-soft" value="Lara Dela Torre" required type="text"></div>
+                                <div class="col-md-6"><label class="field-label" for="emailInput">Email</label><input id="emailInput" class="input-soft" value="lara@trbltours.com" required type="email"></div>
+                            </div>
+                            <button class="btn-gold mt-3" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Profile</button>
+                        </form>
+
+                        <hr class="my-4">
+
+                        <form id="passwordForm">
+                            <h2 class="h6 mb-3">Password Change</h2>
+                            <div class="row g-3">
+                                <div class="col-md-4"><label class="field-label" for="oldPass">Current</label><input id="oldPass" class="input-soft" required type="password"></div>
+                                <div class="col-md-4"><label class="field-label" for="newPass">New</label><input id="newPass" class="input-soft" required type="password"></div>
+                                <div class="col-md-4"><label class="field-label" for="confirmPass">Confirm</label><input id="confirmPass" class="input-soft" required type="password"></div>
+                            </div>
+                            <button class="btn-charcoal mt-3" type="submit"><i class="fa-solid fa-key me-2"></i>Update Password</button>
+                        </form>
+
+                        <hr class="my-4">
+
+                        <form id="prefsForm">
+                            <h2 class="h6 mb-3">Interests Preferences</h2>
+                            <div class="d-flex flex-wrap gap-3">
+                                <label><input class="form-check-input me-1" checked type="checkbox">Trekking</label>
+                                <label><input class="form-check-input me-1" checked type="checkbox">Nature</label>
+                                <label><input class="form-check-input me-1" type="checkbox">Food Tours</label>
+                                <label><input class="form-check-input me-1" checked type="checkbox">Water Sports</label>
+                            </div>
+
+                            <h2 class="h6 mt-4 mb-3">Notification Toggles</h2>
+                            <div class="form-check form-switch mb-2"><input class="form-check-input" checked type="checkbox" id="notif1"><label class="form-check-label" for="notif1">Booking updates</label></div>
+                            <div class="form-check form-switch mb-2"><input class="form-check-input" checked type="checkbox" id="notif2"><label class="form-check-label" for="notif2">Messages from guides</label></div>
+                            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="notif3"><label class="form-check-label" for="notif3">Weekly travel suggestions</label></div>
+
+                            <button class="btn-gold mt-3" type="submit"><i class="fa-solid fa-check me-2"></i>Save Preferences</button>
+                        </form>
+                    </article>
+
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ asset('assets/app.js') }}"></script>
+</body>
+
+</html>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrblTours Explore Tours</title>
+    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            corePlugins: {
+                preflight: false
+            },
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['Sora', 'Manrope', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+
+<body class="account-page" data-page="explore" data-require-auth="true">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="app-root">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <a href="index.html" class="brand-asimovian brand-top">TrblTours</a>
+                    <small class="text-muted">Tourist Workspace</small>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <p class="side-label">Navigation</p>
+                <a class="side-link" href="explore.html" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
+                <div class="dropdown">
+                    <a class="side-link has-notif" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
+                        <i class="fa-solid fa-bell notif-bell"></i>Notifications
+                        <span class="side-badge" id="notificationBadge">0</span>
+                    </a>
+                    <div class="dropdown-menu notification-menu sidebar-notif">
+                        <div class="d-flex justify-content-between align-items-center px-2 pb-2 border-bottom">
+                            <strong>Notifications</strong>
+                            <small class="text-muted">Live updates</small>
+                        </div>
+                        <div id="notificationList" class="d-grid gap-1 pt-2"></div>
+                    </div>
+                </div>
+                <a class="side-link" href="my-posts.html" data-page="my-posts"><i class="fa-solid fa-clipboard-list"></i>My Posts</a>
+                <a class="side-link" href="my-bookings.html" data-page="my-bookings"><i class="fa-solid fa-ticket"></i>My Bookings</a>
+                <a class="side-link" href="likes.html" data-page="likes"><i class="fa-solid fa-heart"></i>Likes</a>
+                <a class="side-link" href="messages.html" data-page="messages"><i class="fa-solid fa-comments"></i>Messages</a>
+                <p class="side-label">Account</p>
+                <a class="side-link" href="profile.html" data-page="profile"><i class="fa-solid fa-user"></i>Profile</a>
+                <a class="side-link" href="settings.html" data-page="settings"><i class="fa-solid fa-gear"></i>Settings</a>
+            </nav>
+            <div class="sidebar-footer"><button id="logoutBtn" class="logout-btn"><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button></div>
+        </aside>
+
+        <div class="app-main">
+            <header class="topbar" id="topbar">
+                <div class="topbar-left">
+                    <div class="dropdown d-lg-none">
+                        <button class="sidebar-toggle" type="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Open navigation menu">
+                            <i class="fa-solid fa-bars"></i>
+                        </button>
+                        <ul class="dropdown-menu hamburger-dropdown">
+                            <li>
+                                <h6 class="dropdown-header">Navigation</h6>
+                            </li>
+                            <li><a class="dropdown-item" href="explore.html"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
+                            <li><a class="dropdown-item" href="my-posts.html"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
+                            <li><a class="dropdown-item" href="my-bookings.html"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
+                            <li><a class="dropdown-item" href="likes.html"><i class="fa-solid fa-heart"></i>Likes</a></li>
+                            <li><a class="dropdown-item" href="messages.html"><i class="fa-solid fa-comments"></i>Messages</a></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li>
+                                <h6 class="dropdown-header">Account</h6>
+                            </li>
+                            <li><a class="dropdown-item" href="profile.html"><i class="fa-solid fa-user"></i>Profile</a></li>
+                            <li><a class="dropdown-item" href="settings.html"><i class="fa-solid fa-gear"></i>Settings</a></li>
+                        </ul>
+                    </div>
+                    <a href="index.html" class="brand-asimovian brand-top">TrblTours</a>
+                </div>
+            </header>
+
+            <main class="content-wrap">
+                <section class="page-header">
+                    <h1 class="page-title">Find Your Perfect Adventure in the Philippines</h1>
+                </section>
+
+                <section class="surface search-panel">
+                    <div>
+                        <label class="field-label" for="searchInput">Location</label>
+                        <input id="searchInput" class="input-soft" type="text" placeholder="Search destinations, guides, tours">
+                    </div>
+                    <button class="btn-gold" type="button"><i class="fa-solid fa-magnifying-glass me-2"></i>Search</button>
+                </section>
+
+                <section class="filter-row">
+                    <select id="sortSelect" class="select-soft" style="max-width:220px; margin-left:auto;">
+                        <option value="latest">Latest</option>
+                        <option value="price-asc">Price Low-High</option>
+                    </select>
+
+                    <button class="region-chip active" data-region-chip="all" type="button">All Regions</button>
+                    <button class="region-chip" data-region-chip="manila" type="button">Manila</button>
+                    <button class="region-chip" data-region-chip="cebu" type="button">Cebu</button>
+                    <button class="region-chip" data-region-chip="davao" type="button">Davao</button>
+                </section>
+
+                <section class="mt-4">
+                    <div class="d-flex align-items-end justify-content-between flex-wrap gap-3">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-[#9A742A]">Curated experiences</p>
+                            <h2 class="mt-2 text-3xl md:text-4xl font-bold display-title">Local Tours</h2>
+                            <p class="mt-2 max-w-2xl text-sm text-stone-600">Handpicked tours from our top-rated verified guides. Every experience is reviewed for quality, safety, and authenticity.</p>
+                        </div>
+                        <small id="visibleCounter" class="text-muted">0 cards in feed</small>
+                    </div>
+                </section>
+
+                <section class="feed-layout mt-3">
+                    <div>
+                        <div class="feed-grid" id="feedCards">
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="2500" data-latest="20260508" data-search="bohol chocolate hills tarsier nature wildlife scenic jethro">
+                                <div class="relative">
+                                    <img src="images/pangasinan.jpg" alt="Bohol Hills" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
+                                    <button class="like-save" type="button" data-like-id="bohol" aria-label="Save Bohol tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">Bohol, Philippines</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Chocolate Hills &amp; Tarsier Sanctuary</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/39.jpg" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Jethro Cabuñas</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.97 (142) • 2 days • 2-8 pax • Easy</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Nature</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Wildlife</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Scenic</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱2,500 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=bohol" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="3800" data-latest="20260507" data-search="el nido island hopping hidden lagoons snorkeling beach joshua">
+                                <div class="relative">
+                                    <img src="images/puertoprincessa.jpg" alt="El Nido" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
+                                    <button class="like-save" type="button" data-like-id="elnido" aria-label="Save El Nido tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">El Nido, Palawan</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Island Hopping &amp; Hidden Lagoons</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/7a.jpg" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Joshua Adrian Badal</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.93 (89) • 2 days • 2-12 pax • Moderate</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Island Hopping</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Snorkeling</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Beach</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱3,800 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=elnido" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="4500" data-latest="20260506" data-search="coron shipwreck diving kayangan lake snorkeling joshua">
+                                <div class="relative">
+                                    <img src="images/manila.png" alt="Coron" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
+                                    <button class="like-save" type="button" data-like-id="coron" aria-label="Save Coron tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">Coron, Palawan</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Shipwreck Diving &amp; Kayangan Lake</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/Manila-4.webp" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Joshua Duhaylungsod</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.88 (176) • 2 days • 2-10 pax • Moderate</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Diving</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Snorkeling</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Shipwreck</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱4,500 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=coron" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-price="8500" data-latest="20260505" data-search="mount apo summit trek davao camping lance challenging">
+                                <div class="relative">
+                                    <img src="images/davao.jpg" alt="Davao" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Trekking</div>
+                                    <button class="like-save" type="button" data-like-id="mtapo" aria-label="Save Mount Apo tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">Davao, Philippines</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Mount Apo Summit Trek</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/intramurous.jpg" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Lance Sebastian</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.95 (63) • 3 days • 4-10 pax • Challenging</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Summit</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Trekking</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Camping</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱8,500 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=mtapo" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="tour-card feed-item" data-type="tour" data-region="manila" data-price="6500" data-latest="20260504" data-search="batanes windmill trail ivatan culture scenic lloyd photography">
+                                <div class="relative">
+                                    <img src="images/carousel2.jpg" alt="Batanes" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
+                                    <button class="like-save" type="button" data-like-id="batanes" aria-label="Save Batanes tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">Batanes, Philippines</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Windmill Trail &amp; Ivatan Culture</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/manila.jpg" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Lloyd Viloria</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.96 (201) • 4 days • 4-12 pax • Easy</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Scenic</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Culture</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Photography</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱6,500 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=batanes" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-price="2200" data-latest="20260503" data-search="siargao surf lessons cloud 9 waves beach marklurence">
+                                <div class="relative">
+                                    <img src="images/carousel3.jpg" alt="Siargao surf" class="h-48 w-full object-cover">
+                                    <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#556B2F]">Water Sports</div>
+                                    <button class="like-save" type="button" data-like-id="siargao" aria-label="Save Siargao tour"></button>
+                                </div>
+                                <div class="flex flex-1 flex-col p-4">
+                                    <p class="text-xs text-stone-500">Siargao, Philippines</p>
+                                    <h3 class="mt-1 line-clamp-2 text-xl font-semibold">Surf Lessons &amp; Cloud 9 Waves</h3>
+                                    <div class="mt-3 flex items-center gap-2 text-sm text-stone-700">
+                                        <img src="images/caoursel1.webp" alt="Guide" class="h-7 w-7 rounded-full object-cover">
+                                        <span class="font-medium">Marklurence Mandalupe</span>
+                                        <span class="rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>
+                                    </div>
+                                    <p class="mt-2 text-sm text-stone-600">4.91 (104) • 3 days • 2-8 pax • Moderate</p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Surfing</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Beach</span>
+                                        <span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">Lessons</span>
+                                    </div>
+                                    <div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">
+                                        <p class="text-3xl font-bold">₱2,200 <span class="text-sm font-medium text-stone-500">/ person</span></p>
+                                        <a href="tour-preview.html?tour=siargao" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <div id="infiniteHook" class="feed-footer mt-3"></div>
+                    </div>
+
+                    <aside class="stat-stack">
+                        <button class="btn-gold floating-create" data-bs-toggle="modal" data-bs-target="#createRequestModal" type="button">
+                            <i class="fa-solid fa-plus me-2"></i>Create Tour Request
+                        </button>
+                    </aside>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal fade" id="createRequestModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 mb-0">Create Tour Request</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="createRequestForm" class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="field-label" for="reqTitle">Title</label>
+                            <input id="reqTitle" name="title" class="input-soft" required type="text" placeholder="Manila">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="field-label" for="reqLocation">Destination</label>
+                            <input id="reqLocation" name="location" class="input-soft" required type="text" placeholder="Intramurous">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqDuration">Duration</label>
+                            <input id="reqDuration" name="duration" class="form-control" type="range" min="1" max="14" value="3">
+                            <small id="reqDurationValue" class="text-muted">3 days</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqRegion">Region</label>
+                            <select id="reqRegion" class="select-soft" name="region">
+                                <option value="National Capital Region (NCR)">National Capital Region (NCR)</option>
+                                <option value="Cordillera Administrative Region (CAR)">Cordillera Administrative Region (CAR)</option>
+                                <option value="Ilocos Region">Ilocos Region</option>
+                                <option value="Cagayan Valley">Cagayan Valley</option>
+                                <option value="Central Luzon">Central Luzon</option>
+                                <option value="CALABARZON">CALABARZON</option>
+                                <option value="MIMAROPA">MIMAROPA</option>
+                                <option value="Bicol Region">Bicol Region</option>
+                                <option value="Western Visayas">Western Visayas</option>
+                                <option value="Central Visayas">Central Visayas</option>
+                                <option value="Eastern Visayas">Eastern Visayas</option>
+                                <option value="Zamboanga Peninsula">Zamboanga Peninsula</option>
+                                <option value="Northern Mindanao">Northern Mindanao</option>
+                                <option value="Davao Region">Davao Region</option>
+                                <option value="SOCCSKSARGEN">SOCCSKSARGEN</option>
+                                <option value="Caraga">Caraga</option>
+                                <option value="Bangsamoro">Bangsamoro</option>
+                                <option value="Negros Island Region">Negros Island Region</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqBudget">Budget</label>
+                            <input id="reqBudget" name="budget" class="input-soft" type="number" min="100" value="3000">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label">Adults</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn-ghost" type="button" data-counter-btn="adultInput" data-counter-type="minus"><i class="fa-solid fa-minus"></i></button>
+                                <input id="adultInput" name="adults" class="input-soft" type="number" value="1" min="1">
+                                <button class="btn-ghost" type="button" data-counter-btn="adultInput" data-counter-type="plus"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            <small class="text-muted">Adults count: <span id="adultsCount">1</span></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label">Children</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn-ghost" type="button" data-counter-btn="childInput" data-counter-type="minus"><i class="fa-solid fa-minus"></i></button>
+                                <input id="childInput" name="children" class="input-soft" type="number" value="0" min="0">
+                                <button class="btn-ghost" type="button" data-counter-btn="childInput" data-counter-type="plus"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            <small class="text-muted">Children count: <span id="childrenCount">0</span></small>
+                        </div>
+                        <div class="col-12">
+                            <label class="field-label">Interests</label>
+                            <div id="interestOptions" class="d-flex gap-3 flex-wrap">
+                                <label><input type="checkbox" name="interests[]" value="Nature"> Nature</label>
+                                <label><input type="checkbox" name="interests[]" value="Culture"> Culture</label>
+                                <label><input type="checkbox" name="interests[]" value="Beach"> Beach</label>
+                                <label><input type="checkbox" name="interests[]" value="Adventure"> Adventure</label>
+                                <label><input type="checkbox" name="interests[]" value="Food"> Food</label>
+                            </div>
+                            <div class="d-flex gap-2 mt-2">
+                                <input id="customInterestInput" class="input-soft" type="text" placeholder="Enter custom interest">
+                                <button id="addInterestBtn" class="btn-soft" type="button">+ Add another</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer mt-3 px-0 pb-0">
+                        <button class="btn-ghost" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn-gold" type="submit">Create Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/app.js"></script>
+</body>
+
+</html>

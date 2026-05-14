@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrblTours | Guide Dashboard</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="assets/auth.css">
+    <style>
+        .guide-shell {
+            min-height: 100vh;
+            padding: 24px;
+            background: linear-gradient(180deg, #f8f5ee 0%, #f4f2ec 100%);
+            font-family: var(--auth-font-body);
+        }
+
+        .guide-wrap {
+            max-width: 1080px;
+            margin: 0 auto;
+            display: grid;
+            gap: 14px;
+        }
+
+        .guide-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .guide-brand {
+            font-family: var(--auth-font-brand);
+            font-size: 2rem;
+            text-decoration: none;
+            color: #2d2416;
+        }
+
+        .guide-chip {
+            border: 1px solid #d8cbab;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #6f5623;
+            background: #f6edda;
+            font-weight: 700;
+        }
+
+        .guide-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .guide-card {
+            border: 1px solid #dfd8c9;
+            border-radius: 16px;
+            background: #fff;
+            padding: 14px;
+            box-shadow: var(--auth-shadow-soft);
+        }
+
+        .guide-card h3 {
+            margin: 0;
+            font-family: var(--auth-font-display);
+            font-size: 1rem;
+            color: #2d2416;
+        }
+
+        .guide-card p {
+            margin: 8px 0 0;
+            color: #6a614f;
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        .guide-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .guide-metric {
+            border: 1px solid #dfd8c9;
+            border-radius: 14px;
+            background: #fff;
+            padding: 12px;
+            box-shadow: var(--auth-shadow-soft);
+        }
+
+        .guide-metric small {
+            display: block;
+            color: #7f7666;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.12em;
+        }
+
+        .guide-metric strong {
+            display: block;
+            margin-top: 4px;
+            font-size: 1.4rem;
+            color: #2b2111;
+            font-family: var(--auth-font-display);
+        }
+
+        @media (max-width: 900px) {
+            .guide-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .guide-metrics {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="guide-shell">
+        <div class="guide-wrap">
+            <header class="guide-top">
+                <a class="guide-brand" href="index.html">TrblTours</a>
+                <span class="guide-chip">Guide Dashboard (Partial)</span>
+            </header>
+
+            <section class="guide-metrics" aria-label="Guide quick stats">
+                <article class="guide-metric"><small>Profile Status</small><strong>Active</strong></article>
+                <article class="guide-metric"><small>New Requests</small><strong>4</strong></article>
+                <article class="guide-metric"><small>Upcoming Tours</small><strong>3</strong></article>
+                <article class="guide-metric"><small>Rating</small><strong>4.9</strong></article>
+            </section>
+
+            <section class="guide-grid" aria-label="Guide dashboard panels">
+                <article class="guide-card">
+                    <h3>Account setup completed</h3>
+                    <p>Your personal information has been saved. This is your partial guide dashboard destination after tapping Done from onboarding review.</p>
+                </article>
+                <article class="guide-card">
+                    <h3>Quick actions</h3>
+                    <p><a href="explore.html">Open Explore</a><br><a href="profile.html">Update profile</a><br><a href="messages.html">Check messages</a></p>
+                </article>
+                <article class="guide-card">
+                    <h3>Verification note</h3>
+                    <p>Identity and professional sections were removed from this onboarding variant as requested.</p>
+                </article>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<aside class="hidden lg:flex lg:w-64 lg:flex-col lg:sticky lg:top-0 lg:h-screen border-r border-[#e9e4d9] bg-[#f6f4ee]">
+    <div class="px-6 py-5 border-b border-[#e9e4d9]">
+        <p class="mt-2 text-xs text-[#8a806d]">Tour Guide Workspace</p>
+    </div>
+
+    <nav class="flex-1 px-4 py-5 space-y-2 text-sm" aria-label="Guide navigation">
+        <p class="px-2 text-[11px] tracking-[0.18em] font-semibold text-[#9d917d] uppercase">Navigation</p>
+        <a href="{{ route('guide.dashboard') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="dashboard"><i class="fa-solid fa-chart-line w-4"></i>Dashboard</a>
+        <a href="{{ route('guide.request-feed.page') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="request-post-feed"><i class="fa-solid fa-clipboard-list w-4"></i>Request Post Feed</a>
+        <a href="{{ route('guide.booking-requests.index') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="booking-requests"><i class="fa-solid fa-inbox w-4"></i>Booking Requests</a>
+        <a href="{{ route('guide.tours.index') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="tours"><i class="fa-solid fa-map-location-dot w-4"></i>My Tours</a>
+        <a href="{{ route('guide.messages') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="messages"><i class="fa-solid fa-comments w-4"></i>Messages</a>
+        <a href="{{ route('guide.profile') }}" class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#ece7d8] text-[#473f31]" data-nav="profile"><i class="fa-solid fa-user w-4"></i>Guide Profile</a>
+    </nav>
+
+    <div class="p-4 border-t border-[#e9e4d9]">
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button type="submit" class="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-[#ded7c9] bg-white px-3 py-2.5 text-sm font-semibold text-[#5d5342] hover:bg-[#f2eee4]">
+                <i class="fa-solid fa-right-from-bracket"></i>Logout
+            </button>
+        </form>
+    </div>
+</aside>
