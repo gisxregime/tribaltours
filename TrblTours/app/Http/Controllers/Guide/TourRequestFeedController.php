@@ -18,17 +18,11 @@ class TourRequestFeedController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $guideId = (int) $request->user()->id;
-
         $query = TourRequest::query()
             ->with(['tourist', 'selectedGuide'])
-            ->where(function ($query) use ($guideId) {
-                $query->whereIn('status', ['open', 'negotiating'])
-                    ->orWhere(function ($nested) use ($guideId) {
-                        $nested->where('status', 'closed')
-                            ->where('selected_guide_id', $guideId);
-                    });
-            })
+            ->where('status', 'open')
+            ->where('is_active', true)
+            ->whereNull('selected_guide_id')
             ->latest()
             ->limit(100);
 
@@ -55,12 +49,10 @@ class TourRequestFeedController extends Controller
 
     public function comments(Request $request, TourRequest $tourRequest): JsonResponse
     {
-        $guideId = (int) $request->user()->id;
-
-        if ((int) ($tourRequest->selected_guide_id ?? 0) > 0 && (int) $tourRequest->selected_guide_id !== $guideId) {
+        if ((int) ($tourRequest->selected_guide_id ?? 0) > 0 || !$tourRequest->is_active || (string) $tourRequest->status !== 'open') {
             return response()->json([
                 'ok' => false,
-                'message' => 'This request is currently private to the selected guide.',
+                'message' => 'This request is already closed.',
             ], 403);
         }
 
@@ -88,19 +80,11 @@ class TourRequestFeedController extends Controller
             ], 503);
         }
 
-        $guideId = (int) $request->user()->id;
-        if ($tourRequest->selected_guide_id && (int) $tourRequest->selected_guide_id !== $guideId) {
+        if ((int) ($tourRequest->selected_guide_id ?? 0) > 0 || !$tourRequest->is_active || (string) $tourRequest->status !== 'open') {
             return response()->json([
                 'ok' => false,
-                'message' => 'This negotiation is private to the selected guide and tourist.',
+                'message' => 'This request is already closed for new negotiation.',
             ], 403);
-        }
-
-        if (!in_array((string) $tourRequest->status, ['open', 'negotiating', 'closed'], true)) {
-            return response()->json([
-                'ok' => false,
-                'message' => 'This request is no longer open for negotiation.',
-            ], 422);
         }
 
         $payload = $request->validate([
@@ -135,15 +119,6 @@ class TourRequestFeedController extends Controller
             'offer_amount' => isset($payload['offer_amount']) ? (float) $payload['offer_amount'] : null,
         ]);
 
-        $nextStatus = $tourRequest->status;
-        if ($nextStatus === 'open') {
-            $nextStatus = 'negotiating';
-        }
-
-        $tourRequest->update([
-            'status' => $nextStatus,
-        ]);
-
         $tourRequest->loadMissing('tourist');
         DomainNotification::notifyUser(
             $tourRequest->tourist,
@@ -172,9 +147,9 @@ class TourRequestFeedController extends Controller
         ]);
 
         $comments = $this->presentComments($tourRequest);
-        $statusBucket = strtolower(trim((string) $tourRequest->status)) === 'completed'
-            ? 'completed'
-            : ((int) ($tourRequest->selected_guide_id ?? 0) > 0 ? 'selected' : strtolower(trim((string) $tourRequest->status)));
+        $statusBucket = (int) ($tourRequest->selected_guide_id ?? 0) > 0
+            ? 'selected'
+            : strtolower(trim((string) $tourRequest->status));
 
         return [
             'id' => (string) $tourRequest->id,
@@ -193,7 +168,10 @@ class TourRequestFeedController extends Controller
             }, is_array($tourRequest->interests) ? $tourRequest->interests : []))),
             'status' => (string) $tourRequest->status,
             'statusBucket' => $statusBucket,
+            'isActive' => (bool) $tourRequest->is_active,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
+            'selectedAt' => optional($tourRequest->selected_at)->toISOString(),
+            'closedAt' => optional($tourRequest->closed_at)->toISOString(),
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
             'selectedGuideAvatar' => $this->resolveAvatarPath($selectedGuide?->avatar_path),
             'comments' => $comments,

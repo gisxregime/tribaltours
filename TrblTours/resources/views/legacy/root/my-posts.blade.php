@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>TrblTours My Posts</title>    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
+    <title>Tribaltours My Posts</title>    <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                     <small class="text-muted">Tourist Workspace</small>
                 </div>
             </div>
@@ -70,7 +70,7 @@
                             <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
                         </ul>
                     </div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                 </div>
             </header>
 
@@ -83,7 +83,6 @@
                     <article class="stat-card"><p class="text-muted small">Total Requests</p><p id="statTotalRequests" class="value" data-request-stats="total_requests">{{ (int) data_get($stats ?? [], 'total_requests', 0) }}</p></article>
                     <article class="stat-card"><p class="text-muted small">Open</p><p id="statOpenRequests" class="value" style="color:#1f5fa6;" data-request-stats="open_requests">{{ (int) data_get($stats ?? [], 'open_requests', 0) }}</p></article>
                     <article class="stat-card"><p class="text-muted small">Selected Guides</p><p id="statSelectedGuides" class="value" style="color:#8f6512;" data-request-stats="selected_guides">{{ (int) data_get($stats ?? [], 'selected_guides', 0) }}</p></article>
-                    <article class="stat-card"><p class="text-muted small">Completed</p><p id="statCompletedTours" class="value" style="color:#477131;" data-request-stats="completed">{{ (int) data_get($stats ?? [], 'completed', 0) }}</p></article>
                 </section>
 
                 <section class="request-manage-grid">

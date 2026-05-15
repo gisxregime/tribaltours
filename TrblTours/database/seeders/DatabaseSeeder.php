@@ -19,9 +19,9 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         User::query()->updateOrCreate(
-            ['email' => 'admin@trbltours.test'],
+            ['email' => 'admin@tribaltours.test'],
             [
-                'name' => 'TrblTours Admin',
+                'name' => 'Tribaltours Admin',
                 'password' => Hash::make('password'),
                 'role' => 'admin',
                 'email_verified_at' => now(),
@@ -30,7 +30,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $sampleGuide = User::query()->updateOrCreate(
-            ['email' => 'guide@trbltours.test'],
+            ['email' => 'guide@tribaltours.test'],
             [
                 'name' => 'Sample Guide',
                 'password' => Hash::make('password'),
@@ -43,7 +43,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $sampleTourist = User::query()->updateOrCreate(
-            ['email' => 'tourist@trbltours.test'],
+            ['email' => 'tourist@tribaltours.test'],
             [
                 'name' => 'Sample Tourist',
                 'password' => Hash::make('password'),

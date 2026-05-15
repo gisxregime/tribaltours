@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>My Tours | TrblTours Guide</title>
+    <title>My Tours | Tribaltours Guide</title>
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +20,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header guide-sidebar-header">
                 <div class="guide-sidebar-brand">
-                    <img src="{{ asset('images/favicon.png') }}" alt="TrblTours logo" class="guide-sidebar-logo">
+                    <img src="{{ asset('images/favicon.png') }}" alt="Tribaltours logo" class="guide-sidebar-logo">
                     <small class="text-muted d-block mt-1">Tour Guide Workspace</small>
                 </div>
             </div>
@@ -54,7 +54,7 @@
                             <li><a class="dropdown-item" href="{{ route('guide.profile') }}"><i class="fa-solid fa-user"></i>Guide Profile</a></li>
                         </ul>
                     </div>
-                    <a href="{{ route('home') }}" class="brand-asimovian guide-top-brand">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian guide-top-brand">Tribaltours</a>
                 </div>
                 <div class="topbar-right">
                     <div class="dropdown">

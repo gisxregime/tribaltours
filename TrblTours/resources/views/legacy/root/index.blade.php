@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrblTours | Discover the Philippines</title>
+    <title>Tribaltours | Discover the Philippines</title>
     <meta name="description" content="Explore curated Philippine travel experiences with verified local guides.">
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
@@ -33,11 +33,11 @@
 <body>
     <header class="landing-nav" id="landingNav">
         <div class="container nav-shell">
-            <a class="brand-lockup" href="{{ route('home') }}" aria-label="TrblTours home page">
+            <a class="brand-lockup" href="{{ route('home') }}" aria-label="Tribaltours home page">
                 <span class="brand-mark" aria-hidden="true">
-                    <img src="{{ asset('images/favicon.png') }}" alt="TrblTours logo" width="34" height="34">
+                    <img src="{{ asset('images/favicon.png') }}" alt="Tribaltours logo" width="34" height="34">
                 </span>
-                <span class="brand-name brand-asimovian">TrblTours</span>
+                <span class="brand-name brand-asimovian">Tribaltours</span>
             </a>
 
             <nav class="desktop-links" aria-label="Main navigation">
@@ -389,7 +389,7 @@
             <div class="container">
                 <div class="center-head reveal">
                     <p class="section-kicker">Simple Process</p>
-                    <h2>How TrblTours Works</h2>
+                    <h2>How Tribaltours Works</h2>
                     <p>Two distinct tracks. Whether you are discovering curated tours or posting a custom request, the process is clear and straightforward.</p>
                 </div>
 
@@ -442,7 +442,7 @@
                 <div class="guide-copy reveal">
                     <p class="section-kicker">Guide Program</p>
                     <h2>Share Your World. <span>Earn Doing What You Love.</span></h2>
-                    <p>Join 2,400+ verified guides on TrblTours. Travelers are waiting to discover your world.</p>
+                    <p>Join 2,400+ verified guides on Tribaltours. Travelers are waiting to discover your world.</p>
 
                     <div class="feature-cards">
                         <article><h3>Set Your Own Rates</h3><p>Price competitively and keep up to 90% of every booking.</p></article>
@@ -500,10 +500,11 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="reqRegion">Region</label>
-                            <select id="reqRegion" class="form-select" name="region">
-                                <option value="manila">Manila</option>
-                                <option value="cebu">Cebu</option>
-                                <option value="davao">Davao</option>
+                            <select id="reqRegion" class="form-select" name="region" required>
+                                <option value="Davao del Norte" selected>Davao del Norte</option>
+                                <option value="Metro Manila">Metro Manila</option>
+                                <option value="Cebu">Cebu</option>
+                                <option value="Davao City">Davao City</option>
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -557,11 +558,11 @@
     <footer class="footer">
         <div class="container footer-grid">
             <div>
-                <a class="brand-lockup" href="{{ route('home') }}" aria-label="TrblTours home page">
+                <a class="brand-lockup" href="{{ route('home') }}" aria-label="Tribaltours home page">
                     <span class="brand-mark" aria-hidden="true">
-                        <img src="{{ asset('images/favicon.png') }}" alt="TrblTours logo" width="32" height="32">
+                        <img src="{{ asset('images/favicon.png') }}" alt="Tribaltours logo" width="32" height="32">
                     </span>
-                    <span class="brand-name brand-asimovian">TrblTours</span>
+                    <span class="brand-name brand-asimovian">Tribaltours</span>
                 </a>
                 <p>Connecting adventurous tourists with verified local guides through curated listings and custom trip requests.</p>
             </div>
@@ -588,7 +589,7 @@
             </div>
         </div>
         <div class="container footer-bottom">
-            <small>© 2026 TrblTours. All rights reserved.</small>
+            <small>© 2026 Tribaltours. All rights reserved.</small>
             <div>
                 <a href="#">Terms</a>
                 <a href="#">Privacy</a>
@@ -614,6 +615,7 @@
             var adultsCount = document.getElementById('adultsCount');
             var childrenInput = document.getElementById('childInput');
             var childrenCount = document.getElementById('childrenCount');
+            var regionInput = document.getElementById('reqRegion');
 
             function syncDuration() {
                 if (durationInput && durationOutput) {
@@ -675,11 +677,20 @@
                     return;
                 }
 
+                var region = String(data.get('region') || '').trim();
+                if (!region) {
+                    window.alert('Region is required.');
+                    if (regionInput) {
+                        regionInput.focus();
+                    }
+                    return;
+                }
+
                 var payload = Object.fromEntries(data.entries());
                 payload.interests = Array.from(form.querySelectorAll('input[name="interests[]"]:checked')).map(function (item) {
                     return item.value;
                 });
-                localStorage.setItem('trbltours_home_request_draft', JSON.stringify(payload));
+                localStorage.setItem('tribaltours_home_request_draft', JSON.stringify(payload));
 
                 var modalEl = document.getElementById('createRequestModal');
                 if (window.bootstrap && modalEl) {
@@ -695,6 +706,9 @@
             syncDuration();
             syncBudget();
             syncCounts();
+            if (regionInput && !String(regionInput.value || '').trim()) {
+                regionInput.value = 'Davao del Norte';
+            }
         })();
     </script>
     <script src="{{ asset('assets/landing.js') }}"></script>

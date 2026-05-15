@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrblTours | Guide Dashboard</title>
+    <title>Tribaltours | Guide Dashboard</title>
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -126,7 +126,7 @@
     <main class="guide-shell">
         <div class="guide-wrap">
             <header class="guide-top">
-                <a class="guide-brand" href="{{ route('home') }}">TrblTours</a>
+                <a class="guide-brand" href="{{ route('home') }}">Tribaltours</a>
                 <span class="guide-chip">Guide Dashboard (Partial)</span>
             </header>
 

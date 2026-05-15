@@ -1,16 +1,16 @@
 (function () {
     const ROLE_KEY = 'role';
-    const LIKES_KEY = 'trbltours_likes';
-    const NOTIFICATIONS_KEY = 'trbltours_notifications';
-    const ACTIVE_PAGE_KEY = 'trbltours_active_page';
-    const BOOKING_DRAFT_KEY = 'trbltours_booking_draft';
-    const BOOKING_HISTORY_KEY = 'trbltours_booking_history';
-    const TOUR_OVERRIDES_KEY = 'trbltours_tour_overrides';
-    const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
-    const BOOKING_PROCESSING_LOCK_KEY = 'trbltours_booking_processing_lock';
-    const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
-    const GUIDE_NOTIFICATIONS_KEY = 'trbltours_guide_notifications_v1';
-    const GUIDE_CONVERSATIONS_KEY = 'trbltours_guide_conversations_v1';
+    const LIKES_KEY = 'tribaltours_likes';
+    const NOTIFICATIONS_KEY = 'tribaltours_notifications';
+    const ACTIVE_PAGE_KEY = 'tribaltours_active_page';
+    const BOOKING_DRAFT_KEY = 'tribaltours_booking_draft';
+    const BOOKING_HISTORY_KEY = 'tribaltours_booking_history';
+    const TOUR_OVERRIDES_KEY = 'tribaltours_tour_overrides';
+    const GUIDE_TOURS_KEY = 'tribaltours_guide_tours_v1';
+    const BOOKING_PROCESSING_LOCK_KEY = 'tribaltours_booking_processing_lock';
+    const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
+    const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
+    const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
     const GUIDE_STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
 
     const TOUR_CATALOG = {
@@ -1518,7 +1518,7 @@
             const observer = new IntersectionObserver(function (entries) {
                 entries.forEach(function (entry) {
                     if (entry.isIntersecting) {
-                        window.dispatchEvent(new CustomEvent('trbltours:infinite-scroll', {
+                        window.dispatchEvent(new CustomEvent('tribaltours:infinite-scroll', {
                             detail: { source: 'index-feed' }
                         }));
                         showToast('Infinite scroll hook reached.', 'dark');
@@ -2937,7 +2937,7 @@
         if (receiptBtn) {
             receiptBtn.addEventListener('click', function () {
                 const receiptLines = [
-                    'TrblTours Booking Receipt',
+                    'Tribaltours Booking Receipt',
                     '-------------------------',
                     'Reference: ' + reference,
                     'Tour: ' + tour.title,

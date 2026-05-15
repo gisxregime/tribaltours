@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>TrblTours Payment Method</title>
+    <title>Tribaltours Payment Method</title>
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +19,7 @@
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="app-root">
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header"><div><a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a><small class="text-muted">Tourist Workspace</small></div></div>
+            <div class="sidebar-header"><div><a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a><small class="text-muted">Tourist Workspace</small></div></div>
             <nav class="sidebar-nav">
                 <p class="side-label">Navigation</p>
                 <a class="side-link" href="{{ route('explore') }}" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
@@ -36,7 +36,7 @@
         </aside>
 
         <div class="app-main">
-            <header class="topbar" id="topbar"><div class="topbar-left"><button id="sidebarToggle" class="sidebar-toggle d-lg-none" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button><a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a></div></header>
+            <header class="topbar" id="topbar"><div class="topbar-left"><button id="sidebarToggle" class="sidebar-toggle d-lg-none" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button><a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a></div></header>
             <main class="content-wrap account-wrap">
                 <section class="page-header"><p class="page-kicker">Booking Flow</p><h1 class="page-title">Payment Method</h1></section>
                 <div class="flow-wrap">

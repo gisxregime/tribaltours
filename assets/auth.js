@@ -1,6 +1,6 @@
 (function () {
-    var AUTH_STORAGE_KEY = 'trbltours_auth_onboarding_v2';
-    var SIGNIN_STORAGE_KEY = 'trbltours_signin_state_v1';
+    var AUTH_STORAGE_KEY = 'tribaltours_auth_onboarding_v2';
+    var SIGNIN_STORAGE_KEY = 'tribaltours_signin_state_v1';
     var ROLE_KEY = 'role';
     var MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
     var OTP_LENGTH = 6;
@@ -1086,7 +1086,7 @@
     AuthController.prototype.renderStepRole = function () {
         return [
             '<p class="auth-section-kicker">Role selection</p>',
-            '<h2 class="auth-title">Choose your TrblTours role</h2>',
+            '<h2 class="auth-title">Choose your Tribaltours role</h2>',
             '<div class="auth-role-grid">',
             '<button type="button" class="auth-role-card ' + (this.state.role === 'tourist' ? 'is-selected' : '') + '" data-role-select="tourist">',
             '<span class="auth-role-icon"><i class="fa-solid fa-map-location-dot"></i></span>',
@@ -1748,7 +1748,7 @@
             st.otp_notice ? '<div class="auth-alert success">' + esc(st.otp_notice) + '</div>' : '',
             '<section class="auth-card">',
             '<p class="auth-section-kicker">Welcome back</p>',
-            '<h2 class="auth-title">' + (isForgot ? 'Forgot your password?' : 'TrblTours Login') + '</h2>',
+            '<h2 class="auth-title">' + (isForgot ? 'Forgot your password?' : 'Tribaltours Login') + '</h2>',
             '<p class="auth-subtitle">' + (isForgot ? 'Enter your email and we will send a secure password reset link.' : 'Sign in to view bookings, likes, and upcoming tours.') + '</p>',
             isForgot ? this.renderForgotCard() : this.renderLoginCard(),
             '</section>'

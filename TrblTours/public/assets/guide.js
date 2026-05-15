@@ -1,14 +1,17 @@
 (function () {
-    const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
-    const GUIDE_BOOKINGS_KEY = 'trbltours_guide_booking_requests_v1';
-    const GUIDE_REVIEWS_KEY = 'trbltours_guide_reviews_v1';
-    const GUIDE_PROFILE_KEY = 'trbltours_guide_profile_v1';
-    const GUIDE_NOTIFICATIONS_KEY = 'trbltours_guide_notifications_v1';
-    const GUIDE_CONVERSATIONS_KEY = 'trbltours_guide_conversations_v1';
-    const GUIDE_TOUR_DRAFT_KEY = 'trbltours_guide_tour_form_draft_v1';
-    const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
+    const GUIDE_TOURS_KEY = 'tribaltours_guide_tours_v1';
+    const GUIDE_BOOKINGS_KEY = 'tribaltours_guide_booking_requests_v1';
+    const GUIDE_REVIEWS_KEY = 'tribaltours_guide_reviews_v1';
+    const GUIDE_PROFILE_KEY = 'tribaltours_guide_profile_v1';
+    const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
+    const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
+    const GUIDE_TOUR_DRAFT_KEY = 'tribaltours_guide_tour_form_draft_v1';
+    const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
     const ROLE_KEY = 'role';
     const STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
+
+    const pendingGuideNotificationDeletes = Object.create(null);
 
     function qs(selector, scope) {
         return (scope || document).querySelector(selector);
@@ -115,6 +118,48 @@
         ].join('');
         host.appendChild(toast);
         const bsToast = new bootstrap.Toast(toast, { delay: 2400 });
+        bsToast.show();
+        toast.addEventListener('hidden.bs.toast', function () {
+            toast.remove();
+        });
+    }
+
+    function showActionToast(message, actionLabel, onAction, kind, delay) {
+        const host = getToastHost();
+        const toast = document.createElement('div');
+        toast.className = 'toast align-items-center text-bg-' + (kind || 'dark') + ' border-0';
+        toast.setAttribute('role', 'status');
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'd-flex align-items-center';
+
+        const body = document.createElement('div');
+        body.className = 'toast-body';
+        body.textContent = String(message || '');
+        wrapper.appendChild(body);
+
+        if (actionLabel && typeof onAction === 'function') {
+            const actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'btn btn-sm btn-light me-2';
+            actionButton.textContent = String(actionLabel);
+            actionButton.addEventListener('click', function () {
+                onAction();
+                bsToast.hide();
+            });
+            wrapper.appendChild(actionButton);
+        }
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close btn-close-white me-2 m-auto';
+        closeButton.setAttribute('data-bs-dismiss', 'toast');
+        wrapper.appendChild(closeButton);
+
+        toast.appendChild(wrapper);
+        host.appendChild(toast);
+
+        const bsToast = new bootstrap.Toast(toast, { delay: Number(delay || 4200) });
         bsToast.show();
         toast.addEventListener('hidden.bs.toast', function () {
             toast.remove();
@@ -834,6 +879,12 @@
             id: String(payload.id || uid('guide-notif')),
             type: String(payload.type || 'general'),
             text: String(payload.text || 'New notification.'),
+            fullText: String(payload.fullText || payload.text || 'New notification.'),
+            actorName: String(payload.actorName || ''),
+            actorAvatar: String(payload.actorAvatar || ''),
+            actionText: String(payload.actionText || ''),
+            targetTitle: String(payload.targetTitle || ''),
+            time: String(payload.time || ''),
             createdAt: String(payload.createdAt || nowISO()),
             read: Boolean(payload.read),
             payload: payload.payload && typeof payload.payload === 'object' ? payload.payload : {}
@@ -874,8 +925,32 @@
     }
 
     function markAllGuideNotificationsRead() {
-        return apiRequest('/notifications/read-all', {
-            method: 'POST',
+        return apiRequest('/notifications/mark-all-read', {
+            method: 'PATCH',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        });
+    }
+
+    function deleteGuideNotification(notificationId) {
+        if (!notificationId) {
+            return Promise.resolve(null);
+        }
+
+        return apiRequest('/notifications/' + encodeURIComponent(String(notificationId)), {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        });
+    }
+
+    function clearAllGuideNotifications() {
+        return apiRequest('/notifications/clear-all', {
+            method: 'DELETE',
             headers: {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': getCsrfToken()
@@ -1085,26 +1160,113 @@
             return;
         }
 
-        list.slice().reverse().forEach(function (item) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'dropdown-item notification-item' + (item.read ? '' : ' unread');
-            button.dataset.notificationId = item.id;
-            button.innerHTML = [
-                '<div class="notification-item__content">',
-                '<div class="notification-item__title">', escapeHtml(item.text), '</div>',
-                '<small class="notification-item__time">', relativeTime(item.createdAt), '</small>',
-                '</div>'
+        function buildNotificationText(item) {
+            const actorName = String(item.actorName || '').trim();
+            const actionText = String(item.actionText || '').trim();
+            const targetTitle = String(item.targetTitle || '').trim();
+            const fullText = String(item.fullText || item.text || '').trim();
+            if (fullText) {
+                return fullText;
+            }
+
+            const parts = [];
+            if (actorName && actorName !== 'System') {
+                parts.push(actorName);
+            }
+            if (actionText) {
+                parts.push(actionText);
+            }
+            let label = parts.join(' ').trim();
+            if (targetTitle) {
+                label = (label ? label + ' ' : '') + '"' + targetTitle + '"';
+            }
+            return label || 'New notification.';
+        }
+
+        list.forEach(function (item) {
+            const id = String(item.id || '');
+            const actorName = String(item.actorName || 'System').trim() || 'System';
+            const avatar = normalizeAssetPath(
+                item.actorAvatar
+                || (item.payload && (item.payload.actorAvatar || item.payload.senderAvatar || item.payload.avatar))
+                || '/images/manila.jpg',
+                '/images/manila.jpg'
+            );
+            const time = item.time || relativeTime(item.createdAt);
+
+            const row = document.createElement('div');
+            row.className = 'notification-entry' + (item.read ? '' : ' unread');
+            row.dataset.notificationId = id;
+            row.innerHTML = [
+                '<span class="notification-entry__dot"', (item.read ? ' hidden' : ''), '></span>',
+                '<img class="notification-entry__avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(actorName), ' avatar">',
+                '<button type="button" class="notification-entry__main" data-notification-open="', escapeHtml(id), '">',
+                '<span class="notification-entry__text">', escapeHtml(buildNotificationText(item)), '</span>',
+                '<small class="notification-entry__time">', escapeHtml(time), '</small>',
+                '</button>',
+                '<button type="button" class="notification-entry__delete" data-notification-delete="', escapeHtml(id), '" aria-label="Delete notification">',
+                '<i class="fa-solid fa-xmark"></i>',
+                '</button>'
             ].join('');
-            listHost.appendChild(button);
+            listHost.appendChild(row);
         });
     }
 
     function initGuideNotifications() {
+        const trigger = qs('#guideNotificationBtn');
+        const dropdown = trigger ? trigger.closest('.dropdown') : null;
+        const menu = dropdown ? qs('.dropdown-menu', dropdown) : null;
+
+        if (menu) {
+            menu.classList.add('notification-dropdown-menu');
+
+            let header = qs('.notification-dropdown-header', menu);
+            if (!header) {
+                const legacyHeader = qs('.border-bottom', menu);
+                if (legacyHeader) {
+                    header = legacyHeader;
+                } else {
+                    header = document.createElement('div');
+                    menu.insertBefore(header, menu.firstChild);
+                }
+                header.className = 'notification-dropdown-header';
+            }
+
+            if (!qs('#guideMarkAllRead', header)) {
+                const actions = document.createElement('div');
+                actions.className = 'notification-dropdown-actions';
+                actions.innerHTML = '<button id="guideMarkAllRead" class="btn-soft py-1 px-2" type="button">Mark all read</button>';
+                header.innerHTML = '<strong>Notifications</strong>';
+                header.appendChild(actions);
+            } else if (!qs('.notification-dropdown-actions', header)) {
+                const markAllButton = qs('#guideMarkAllRead', header);
+                const actions = document.createElement('div');
+                actions.className = 'notification-dropdown-actions';
+                if (markAllButton) {
+                    actions.appendChild(markAllButton);
+                }
+                header.innerHTML = '<strong>Notifications</strong>';
+                header.appendChild(actions);
+            }
+
+            const listHost = qs('#guideNotificationList', menu);
+            if (listHost) {
+                listHost.classList.add('notification-dropdown-list');
+            }
+
+            if (!qs('#guideClearAllNotifications', menu)) {
+                const footer = document.createElement('div');
+                footer.className = 'notification-dropdown-footer';
+                footer.innerHTML = '<button id="guideClearAllNotifications" class="btn-soft py-1 px-2" type="button">Clear all notifications</button>';
+                menu.appendChild(footer);
+            }
+        }
+
         const markAll = qs('#guideMarkAllRead');
+        const clearAll = qs('#guideClearAllNotifications');
         const listHost = qs('#guideNotificationList');
 
-        if (markAll) {
+        if (markAll && !markAll.dataset.boundClick) {
             markAll.addEventListener('click', function () {
                 markAllGuideNotificationsRead().then(function () {
                     return syncGuideNotificationsFromApi();
@@ -1116,21 +1278,99 @@
                     renderGuideNotifications();
                 });
             });
+            markAll.dataset.boundClick = 'true';
         }
 
-        if (listHost) {
+        if (clearAll && !clearAll.dataset.boundClick) {
+            clearAll.addEventListener('click', function () {
+                const current = getGuideNotifications();
+                if (!current.length) {
+                    showToast('No notifications to clear.', 'secondary');
+                    return;
+                }
+
+                setGuideNotifications([]);
+                renderGuideNotifications();
+                closeDropdownByButtonId('guideNotificationBtn');
+                clearAllGuideNotifications().catch(function () {
+                    setGuideNotifications(current);
+                    renderGuideNotifications();
+                    showToast('Unable to clear notifications right now.', 'danger');
+                });
+            });
+            clearAll.dataset.boundClick = 'true';
+        }
+
+        if (listHost && !listHost.dataset.boundClick) {
             listHost.addEventListener('click', function (event) {
-                const target = event.target.closest('[data-notification-id]');
+                const deleteTarget = event.target.closest('[data-notification-delete]');
+                if (deleteTarget) {
+                    const deleteId = String(deleteTarget.getAttribute('data-notification-delete') || '');
+                    if (!deleteId || pendingGuideNotificationDeletes[deleteId]) {
+                        return;
+                    }
+
+                    const current = getGuideNotifications();
+                    const deleteIndex = current.findIndex(function (item) {
+                        return String(item.id) === deleteId;
+                    });
+                    if (deleteIndex < 0) {
+                        return;
+                    }
+
+                    const removedItem = current[deleteIndex];
+                    const next = current.filter(function (item) {
+                        return String(item.id) !== deleteId;
+                    });
+                    setGuideNotifications(next);
+                    renderGuideNotifications();
+
+                    const timer = window.setTimeout(function () {
+                        deleteGuideNotification(deleteId).catch(function () {
+                            const restored = getGuideNotifications();
+                            const insertAt = Math.min(deleteIndex, restored.length);
+                            restored.splice(insertAt, 0, removedItem);
+                            setGuideNotifications(restored);
+                            renderGuideNotifications();
+                            showToast('Unable to delete notification right now.', 'danger');
+                        }).finally(function () {
+                            delete pendingGuideNotificationDeletes[deleteId];
+                        });
+                    }, PENDING_NOTIFICATION_DELETE_DELAY);
+
+                    pendingGuideNotificationDeletes[deleteId] = {
+                        item: removedItem,
+                        index: deleteIndex,
+                        timerId: timer,
+                    };
+
+                    showActionToast('Notification removed.', 'Undo', function () {
+                        const pending = pendingGuideNotificationDeletes[deleteId];
+                        if (!pending) {
+                            return;
+                        }
+                        window.clearTimeout(pending.timerId);
+                        const restored = getGuideNotifications();
+                        const insertAt = Math.min(pending.index, restored.length);
+                        restored.splice(insertAt, 0, pending.item);
+                        setGuideNotifications(restored);
+                        renderGuideNotifications();
+                        delete pendingGuideNotificationDeletes[deleteId];
+                    }, 'dark', 4200);
+                    return;
+                }
+
+                const target = event.target.closest('[data-notification-open]');
                 if (!target) {
                     return;
                 }
-                const id = target.dataset.notificationId;
+                const id = String(target.getAttribute('data-notification-open') || '');
                 const current = getGuideNotifications();
                 const clicked = current.find(function (item) {
-                    return item.id === id;
+                    return String(item.id) === id;
                 });
                 const updated = current.map(function (item) {
-                    if (item.id === id) {
+                    if (String(item.id) === id) {
                         return Object.assign({}, item, { read: true });
                     }
                     return item;
@@ -1140,8 +1380,10 @@
                 markGuideNotificationRead(id).catch(function () {
                     return null;
                 });
+                closeDropdownByButtonId('guideNotificationBtn');
                 window.location.href = getNotificationRoute(clicked || {});
             });
+            listHost.dataset.boundClick = 'true';
         }
 
         window.addEventListener('storage', function (event) {
@@ -1152,6 +1394,16 @@
 
         renderGuideNotifications();
         syncGuideNotificationsFromApi();
+    }
+
+    function closeDropdownByButtonId(buttonId) {
+        const trigger = qs('#' + String(buttonId || ''));
+        if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        const instance = window.bootstrap.Dropdown.getInstance(trigger) || window.bootstrap.Dropdown.getOrCreateInstance(trigger);
+        instance.hide();
     }
 
     function ensureConversation(touristName, avatar, tourTitle, idHint) {
@@ -1193,9 +1445,13 @@
         let realtimeSubscribed = false;
         let requestFeedPollingId = null;
 
-        function isFeedVisibleStatus(status) {
-            const normalized = String(status || '').trim().toLowerCase();
-            return normalized === 'open' || normalized === 'negotiating' || normalized === 'selected' || normalized === 'closed';
+        function isFeedVisibleRequest(request) {
+            const payload = request && typeof request === 'object' ? request : {};
+            const normalized = String(payload.status || '').trim().toLowerCase();
+            const isActive = payload.isActive !== false;
+            const hasSelectedGuide = !!payload.selectedGuideId;
+
+            return normalized === 'open' && isActive && !hasSelectedGuide;
         }
 
         function statusBadgeClass(status) {
@@ -1229,7 +1485,7 @@
                 return String(item.id) === String(request.id);
             });
 
-            if (!isFeedVisibleStatus(request.status)) {
+            if (!isFeedVisibleRequest(request)) {
                 if (existingIndex !== -1) {
                     current.splice(existingIndex, 1);
                     setTouristRequests(current.slice(0, 120));
@@ -1258,7 +1514,7 @@
                     return;
                 }
                 setTouristRequests(data.requests.filter(function (item) {
-                    return isFeedVisibleStatus(item && item.status);
+                    return isFeedVisibleRequest(item);
                 }).map(function (item) {
                     return Object.assign({ comments: [] }, item, {
                         comments: Array.isArray(item.comments) ? item.comments : []
@@ -1441,7 +1697,7 @@
 
         function render() {
             const requests = getTouristRequests().filter(function (item) {
-                return isFeedVisibleStatus(item && item.status);
+                return isFeedVisibleRequest(item);
             }).slice().sort(function (a, b) {
                 return new Date(b.createdAt || nowISO()).getTime() - new Date(a.createdAt || nowISO()).getTime();
             });

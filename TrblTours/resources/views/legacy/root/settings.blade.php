@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>TrblTours Settings</title>
+    <title>Tribaltours Settings</title>
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +22,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                     <small class="text-muted">Tourist Workspace</small>
                 </div>
             </div>
@@ -74,7 +74,7 @@
                             <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
                         </ul>
                     </div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                 </div>
             </header>
 

@@ -15,6 +15,7 @@ class TourRequest extends Model
     protected $fillable = [
         'tourist_id',
         'selected_guide_id',
+        'selected_at',
         'title',
         'description',
         'province',
@@ -25,6 +26,8 @@ class TourRequest extends Model
         'travelers_label',
         'interests',
         'status',
+        'is_active',
+        'closed_at',
         'metadata',
     ];
 
@@ -35,6 +38,9 @@ class TourRequest extends Model
             'metadata' => 'array',
             'budget_min' => 'decimal:2',
             'budget_max' => 'decimal:2',
+            'selected_at' => 'datetime',
+            'closed_at' => 'datetime',
+            'is_active' => 'boolean',
         ];
     }
 

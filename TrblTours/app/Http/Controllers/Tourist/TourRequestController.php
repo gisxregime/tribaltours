@@ -46,7 +46,6 @@ class TourRequestController extends Controller
                 'total_requests' => 0,
                 'open_requests' => 0,
                 'selected_guides' => 0,
-                'completed' => 0,
             ],
         ]);
     }
@@ -66,7 +65,7 @@ class TourRequestController extends Controller
             'interests' => ['nullable', 'array'],
             'interests.*' => ['string', 'max:80'],
             'location' => ['nullable', 'string', 'max:120'],
-            'region' => ['nullable', 'string', 'max:120'],
+            'region' => ['required', 'string', 'max:120'],
             'duration' => ['nullable', 'string', 'max:120'],
             'adults' => ['nullable', 'integer', 'min:1'],
             'children' => ['nullable', 'integer', 'min:0'],
@@ -110,6 +109,9 @@ class TourRequestController extends Controller
             'travelers_label' => $travelersLabel,
             'interests' => $interests,
             'status' => 'open',
+            'is_active' => true,
+            'selected_at' => null,
+            'closed_at' => null,
             'metadata' => [
                 'source' => 'explore-modal',
             ],
@@ -188,6 +190,13 @@ class TourRequestController extends Controller
     public function addComment(Request $request, TourRequest $tourRequest): JsonResponse
     {
         abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
+
+        if ((int) ($tourRequest->selected_guide_id ?? 0) > 0 || !$tourRequest->is_active) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'This request is already closed after guide selection.',
+            ], 422);
+        }
 
         if (!$this->hasTourRequestCommentsTable()) {
             return response()->json([
@@ -330,10 +339,15 @@ class TourRequestController extends Controller
         $metadata['selected_guide_id'] = (string) $guide->id;
         $metadata['selected_guides'] = $selectedGuides;
         $metadata['selected_at'] = now()->toISOString();
+        $metadata['closed_at'] = now()->toISOString();
+        $metadata['is_active'] = false;
 
         $tourRequest->update([
             'selected_guide_id' => $guide->id,
-            'status' => 'closed',
+            'status' => 'completed',
+            'selected_at' => now(),
+            'closed_at' => now(),
+            'is_active' => false,
             'metadata' => $metadata,
         ]);
 
@@ -453,20 +467,12 @@ class TourRequestController extends Controller
             $metadata['selected_conversation_id']
         );
 
-        $hasGuideComments = $this->hasTourRequestCommentsTable()
-            ? TourRequestComment::query()
-                ->where('tour_request_id', $tourRequest->id)
-                ->where('author_role', 'guide')
-                ->exists()
-            : false;
-
-        $nextStatus = $hasGuideComments
-            ? 'negotiating'
-            : 'open';
-
         $tourRequest->update([
             'selected_guide_id' => null,
-            'status' => $nextStatus,
+            'selected_at' => null,
+            'closed_at' => null,
+            'is_active' => true,
+            'status' => 'open',
             'metadata' => $metadata,
         ]);
 
@@ -537,6 +543,7 @@ class TourRequestController extends Controller
             'interests' => ['sometimes', 'nullable', 'array'],
             'interests.*' => ['string', 'max:80'],
             'status' => ['sometimes', 'nullable', 'in:open,negotiating,closed,completed,cancelled'],
+            'is_active' => ['sometimes', 'boolean'],
         ];
 
         $payload = $request->validate($rules);
@@ -607,11 +614,9 @@ class TourRequestController extends Controller
 
         $statusBucket = $this->resolveRequestBucket($tourRequest);
         $negotiationStatus = 'open';
-        if ($statusBucket === 'completed') {
-            $negotiationStatus = 'completed';
-        } elseif ($statusBucket === 'cancelled') {
+        if ($statusBucket === 'cancelled') {
             $negotiationStatus = 'cancelled';
-        } elseif ($statusBucket === 'negotiating' || $statusBucket === 'selected') {
+        } elseif ($statusBucket === 'selected') {
             $negotiationStatus = 'negotiating';
         }
 
@@ -637,7 +642,10 @@ class TourRequestController extends Controller
             'status' => (string) $tourRequest->status,
             'statusBucket' => $statusBucket,
             'negotiationStatus' => $negotiationStatus,
+            'isActive' => (bool) $tourRequest->is_active,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
+            'selectedAt' => optional($tourRequest->selected_at)->toISOString(),
+            'closedAt' => optional($tourRequest->closed_at)->toISOString(),
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
             'selectedGuideAvatar' => $this->resolveAvatarPath($selectedGuide?->avatar_path, '/images/manila.jpg'),
             'selectedGuideBio' => (string) ($selectedGuide?->bio ?? ''),
@@ -657,30 +665,31 @@ class TourRequestController extends Controller
     {
         $totalRequests = TourRequest::query()
             ->where('tourist_id', $tourist->id)
+            ->where(function ($query) {
+                $query->where(function ($inner) {
+                    $inner->whereNull('selected_guide_id')
+                        ->whereIn('status', ['open', 'negotiating'])
+                        ->where('is_active', true);
+                })->orWhereNotNull('selected_guide_id');
+            })
             ->count();
 
         $openRequests = TourRequest::query()
             ->where('tourist_id', $tourist->id)
-            ->where('status', 'open')
+            ->whereIn('status', ['open', 'negotiating'])
+            ->where('is_active', true)
             ->whereNull('selected_guide_id')
             ->count();
 
         $selectedGuides = TourRequest::query()
             ->where('tourist_id', $tourist->id)
             ->whereNotNull('selected_guide_id')
-            ->whereNotIn('status', ['completed', 'cancelled'])
-            ->count();
-
-        $completedRequests = TourRequest::query()
-            ->where('tourist_id', $tourist->id)
-            ->where('status', 'completed')
             ->count();
 
         return [
             'total_requests' => $totalRequests,
             'open_requests' => $openRequests,
             'selected_guides' => $selectedGuides,
-            'completed' => $completedRequests,
         ];
     }
 
@@ -689,23 +698,15 @@ class TourRequestController extends Controller
         $status = strtolower(trim((string) $tourRequest->status));
         $hasSelectedGuide = (int) ($tourRequest->selected_guide_id ?? 0) > 0;
 
-        if ($status === 'completed') {
-            return 'completed';
-        }
-
-        if ($status === 'cancelled' || ($status === 'closed' && !$hasSelectedGuide)) {
-            return 'cancelled';
-        }
-
         if ($hasSelectedGuide) {
             return 'selected';
         }
 
-        if ($status === 'negotiating') {
-            return 'negotiating';
+        if (($status === 'open' || $status === 'negotiating') && $tourRequest->is_active) {
+            return 'open';
         }
 
-        return 'open';
+        return 'cancelled';
     }
 
     private function presentComments(TourRequest $tourRequest): array

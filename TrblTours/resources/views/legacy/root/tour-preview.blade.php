@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrblTours Tour Preview</title>
+    <title>Tribaltours Tour Preview</title>
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                     <small class="text-muted">Tourist Workspace</small>
                 </div>
             </div>
@@ -35,7 +35,6 @@
                     <div class="dropdown-menu notification-menu sidebar-notif">
                         <div class="d-flex justify-content-between align-items-center px-2 pb-2 border-bottom">
                             <strong>Notifications</strong>
-                            <small class="text-muted">Live updates</small>
                         </div>
                         <div id="notificationList" class="d-grid gap-1 pt-2"></div>
                     </div>
@@ -72,7 +71,7 @@
                             <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
                         </ul>
                     </div>
-                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">TrblTours</a>
+                    <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
                 </div>
             </header>
 
@@ -83,7 +82,7 @@
                         <div class="preview-meta">
                             <span><i class="fa-solid fa-star text-warning me-1"></i><span data-tour-rating>0.0</span></span>
                             <span><span data-tour-reviews>0</span> reviews</span>
-                            <span>Activity provider: <strong data-tour-provider>TrblTours</strong></span>
+                            <span>Activity provider: <strong data-tour-provider>Tribaltours</strong></span>
                         </div>
 
                         <div class="gallery-grid">
@@ -127,6 +126,14 @@
                             <h2 class="h4 mb-2">Ratings &amp; Reviews</h2>
                             <p id="tourPreviewReviewEmpty" class="small text-muted mb-0">No public reviews yet for this listing.</p>
                             <div id="tourPreviewReviewList" class="guide-layout-grid mt-2"></div>
+                        </section>
+
+                        <section class="activity-listing mt-3" id="tourPreviewSimilarSection">
+                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                <h2 class="h4 mb-0">Similar Tours</h2>
+                            </div>
+                            <p id="tourPreviewSimilarEmpty" class="small text-muted mt-2 mb-0">No similar tours available yet.</p>
+                            <div id="tourPreviewSimilarList" class="tour-preview-similar-grid mt-3"></div>
                         </section>
                     </section>
 

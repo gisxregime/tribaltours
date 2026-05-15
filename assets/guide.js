@@ -1,12 +1,12 @@
 (function () {
-    const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
-    const GUIDE_BOOKINGS_KEY = 'trbltours_guide_booking_requests_v1';
-    const GUIDE_REVIEWS_KEY = 'trbltours_guide_reviews_v1';
-    const GUIDE_PROFILE_KEY = 'trbltours_guide_profile_v1';
-    const GUIDE_NOTIFICATIONS_KEY = 'trbltours_guide_notifications_v1';
-    const GUIDE_CONVERSATIONS_KEY = 'trbltours_guide_conversations_v1';
-    const GUIDE_TOUR_DRAFT_KEY = 'trbltours_guide_tour_form_draft_v1';
-    const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
+    const GUIDE_TOURS_KEY = 'tribaltours_guide_tours_v1';
+    const GUIDE_BOOKINGS_KEY = 'tribaltours_guide_booking_requests_v1';
+    const GUIDE_REVIEWS_KEY = 'tribaltours_guide_reviews_v1';
+    const GUIDE_PROFILE_KEY = 'tribaltours_guide_profile_v1';
+    const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
+    const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
+    const GUIDE_TOUR_DRAFT_KEY = 'tribaltours_guide_tour_form_draft_v1';
+    const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
     const ROLE_KEY = 'role';
     const STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
 

@@ -1,17 +1,18 @@
 (function () {
     const ROLE_KEY = 'role';
-    const LIKES_KEY = 'trbltours_likes';
-    const NOTIFICATIONS_KEY = 'trbltours_notifications';
-    const ACTIVE_PAGE_KEY = 'trbltours_active_page';
-    const BOOKING_DRAFT_KEY = 'trbltours_booking_draft';
-    const BOOKING_HISTORY_KEY = 'trbltours_booking_history';
-    const TOUR_OVERRIDES_KEY = 'trbltours_tour_overrides';
-    const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
-    const BOOKING_PROCESSING_LOCK_KEY = 'trbltours_booking_processing_lock';
-    const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
-    const GUIDE_NOTIFICATIONS_KEY = 'trbltours_guide_notifications_v1';
-    const GUIDE_CONVERSATIONS_KEY = 'trbltours_guide_conversations_v1';
+    const LIKES_KEY = 'tribaltours_likes';
+    const NOTIFICATIONS_KEY = 'tribaltours_notifications';
+    const ACTIVE_PAGE_KEY = 'tribaltours_active_page';
+    const BOOKING_DRAFT_KEY = 'tribaltours_booking_draft';
+    const BOOKING_HISTORY_KEY = 'tribaltours_booking_history';
+    const TOUR_OVERRIDES_KEY = 'tribaltours_tour_overrides';
+    const GUIDE_TOURS_KEY = 'tribaltours_guide_tours_v1';
+    const BOOKING_PROCESSING_LOCK_KEY = 'tribaltours_booking_processing_lock';
+    const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
+    const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
+    const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
     const GUIDE_STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const REQUEST_DEFAULT_REGION = 'Davao del Norte';
 
     const TOUR_CATALOG = {
         bohol: {
@@ -936,9 +937,26 @@
         });
     }
 
+    function resolveRequestRegionKey(value) {
+        const text = String(value || '').trim().toLowerCase();
+        if (!text) {
+            return 'all';
+        }
+        if (text.indexOf('davao') !== -1 || text.indexOf('mindanao') !== -1) {
+            return 'davao';
+        }
+        if (text.indexOf('cebu') !== -1 || text.indexOf('bohol') !== -1 || text.indexOf('palawan') !== -1 || text.indexOf('visayas') !== -1) {
+            return 'cebu';
+        }
+        if (text.indexOf('manila') !== -1 || text.indexOf('ncr') !== -1 || text.indexOf('luzon') !== -1) {
+            return 'manila';
+        }
+        return 'all';
+    }
+
     function buildRequestCard(data) {
         return [
-            '<article class="feed-item request-card" data-type="request" data-region="', data.region || 'all', '" data-price="', data.budgetMax || 2000, '" data-latest="', Date.now(), '" data-search="',
+            '<article class="feed-item request-card" data-type="request" data-region="', data.regionKey || resolveRequestRegionKey(data.region), '" data-price="', data.budgetMax || 2000, '" data-latest="', Date.now(), '" data-search="',
             (data.title + ' ' + data.location + ' ' + (data.interests || '')).toLowerCase(),
             '">',
             '<div class="d-flex justify-content-between align-items-start gap-2">',
@@ -987,10 +1005,15 @@
         const adultsDisplay = qs('#adultsCount');
         const childrenDisplay = qs('#childrenCount');
         const createForm = qs('#createRequestForm');
+        const regionInput = qs('#reqRegion', createForm || document);
         const visibleCounter = qs('#visibleCounter');
 
         let activeType = 'all';
         let activeRegion = 'all';
+
+        if (regionInput && !String(regionInput.value || '').trim()) {
+            regionInput.value = REQUEST_DEFAULT_REGION;
+        }
 
         if (budgetRange && budgetOutput) {
             budgetOutput.textContent = 'PHP ' + Number(budgetRange.value).toLocaleString();
@@ -1111,9 +1134,18 @@
                 const payload = Object.fromEntries(formData.entries());
                 const low = Number(payload.budgetMin || 0);
                 const high = Number(payload.budgetMax || 0);
+                const regionText = String(payload.region || REQUEST_DEFAULT_REGION).trim();
 
                 if (high < low) {
                     showToast('Budget max should be greater than min.', 'danger');
+                    return;
+                }
+
+                if (!regionText) {
+                    showToast('Region is required.', 'warning');
+                    if (regionInput) {
+                        regionInput.focus();
+                    }
                     return;
                 }
 
@@ -1126,7 +1158,7 @@
                     wrapper.innerHTML = buildRequestCard({
                         title: payload.title || 'New Tourist Request',
                         location: payload.location || 'Philippines',
-                        region: payload.region || 'manila',
+                        region: regionText,
                         duration: payload.duration || durationInput.value,
                         budgetMin: payload.budgetMin || minBudget.value,
                         budgetMax: payload.budgetMax || maxBudget.value,
@@ -1148,6 +1180,9 @@
                     });
                     createForm.reset();
                     syncModalBudget();
+                    if (regionInput) {
+                        regionInput.value = REQUEST_DEFAULT_REGION;
+                    }
                     if (durationOutput && durationInput) {
                         durationOutput.textContent = durationInput.value + ' days';
                     }
@@ -1168,7 +1203,7 @@
             const observer = new IntersectionObserver(function (entries) {
                 entries.forEach(function (entry) {
                     if (entry.isIntersecting) {
-                        window.dispatchEvent(new CustomEvent('trbltours:infinite-scroll', {
+                        window.dispatchEvent(new CustomEvent('tribaltours:infinite-scroll', {
                             detail: { source: 'index-feed' }
                         }));
                         showToast('Infinite scroll hook reached.', 'dark');
@@ -2277,7 +2312,7 @@
         if (receiptBtn) {
             receiptBtn.addEventListener('click', function () {
                 const receiptLines = [
-                    'TrblTours Booking Receipt',
+                    'Tribaltours Booking Receipt',
                     '-------------------------',
                     'Reference: ' + reference,
                     'Tour: ' + tour.title,

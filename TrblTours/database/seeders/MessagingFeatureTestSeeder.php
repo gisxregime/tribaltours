@@ -20,7 +20,7 @@ class MessagingFeatureTestSeeder extends Seeder
     public function run(): void
     {
         $guide = User::query()->updateOrCreate(
-            ['email' => 'qa-guide@trbltours.test'],
+            ['email' => 'qa-guide@tribaltours.test'],
             [
                 'name' => 'QA Guide',
                 'password' => Hash::make('password'),
@@ -36,7 +36,7 @@ class MessagingFeatureTestSeeder extends Seeder
         );
 
         $tourist = User::query()->updateOrCreate(
-            ['email' => 'qa-tourist@trbltours.test'],
+            ['email' => 'qa-tourist@tribaltours.test'],
             [
                 'name' => 'QA Tourist',
                 'password' => Hash::make('password'),
@@ -50,7 +50,7 @@ class MessagingFeatureTestSeeder extends Seeder
         );
 
         $secondaryTourist = User::query()->updateOrCreate(
-            ['email' => 'qa-tourist-2@trbltours.test'],
+            ['email' => 'qa-tourist-2@tribaltours.test'],
             [
                 'name' => 'QA Tourist Two',
                 'password' => Hash::make('password'),

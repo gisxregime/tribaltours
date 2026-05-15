@@ -88,7 +88,7 @@
         var title = isGuidePending ? 'Application Submitted Successfully' : 'Account Created Successfully';
         var body = isGuidePending
             ? 'Your guide application is now pending admin approval. You can explore the platform while we review your submitted details.'
-            : 'Welcome to TrblTours. Your account is ready and you can now continue exploring tours.';
+            : 'Welcome to Tribaltours. Your account is ready and you can now continue exploring tours.';
 
         host.innerHTML = [
             '<article class="onboarding-toast" role="status">',

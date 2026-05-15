@@ -1,10 +1,10 @@
 <header class="landing-nav" id="landingNav">
     <div class="container nav-shell">
-        <a class="brand-lockup" href="{{ route('home') }}" aria-label="TrblTours home page">
+        <a class="brand-lockup" href="{{ route('home') }}" aria-label="Tribaltours home page">
             <span class="brand-mark" aria-hidden="true">
-                <img src="{{ asset('images/favicon.png') }}" alt="TrblTours logo" width="34" height="34">
+                <img src="{{ asset('images/favicon.png') }}" alt="Tribaltours logo" width="34" height="34">
             </span>
-            <span class="brand-name brand-asimovian">TrblTours</span>
+            <span class="brand-name brand-asimovian">Tribaltours</span>
         </a>
 
         <nav class="desktop-links" aria-label="Main navigation">

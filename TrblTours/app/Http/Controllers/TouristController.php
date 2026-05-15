@@ -35,23 +35,25 @@ class TouristController extends Controller
 
         $totalRequests = TourRequest::query()
             ->where('tourist_id', $user->id)
+            ->where(function ($query) {
+                $query->where(function ($inner) {
+                    $inner->whereNull('selected_guide_id')
+                        ->whereIn('status', ['open', 'negotiating'])
+                        ->where('is_active', true);
+                })->orWhereNotNull('selected_guide_id');
+            })
             ->count();
 
         $openRequests = TourRequest::query()
             ->where('tourist_id', $user->id)
-            ->where('status', 'open')
+            ->whereIn('status', ['open', 'negotiating'])
+            ->where('is_active', true)
             ->whereNull('selected_guide_id')
             ->count();
 
         $selectedGuides = TourRequest::query()
             ->where('tourist_id', $user->id)
             ->whereNotNull('selected_guide_id')
-            ->whereNotIn('status', ['completed', 'cancelled'])
-            ->count();
-
-        $completedRequests = TourRequest::query()
-            ->where('tourist_id', $user->id)
-            ->where('status', 'completed')
             ->count();
 
         return view('tourist.my-posts', [
@@ -59,7 +61,6 @@ class TouristController extends Controller
                 'total_requests' => $totalRequests,
                 'open_requests' => $openRequests,
                 'selected_guides' => $selectedGuides,
-                'completed' => $completedRequests,
             ],
         ]);
     }

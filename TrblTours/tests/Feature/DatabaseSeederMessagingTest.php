@@ -17,8 +17,8 @@ class DatabaseSeederMessagingTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        $guide = User::query()->where('email', 'guide@trbltours.test')->first();
-        $tourist = User::query()->where('email', 'tourist@trbltours.test')->first();
+        $guide = User::query()->where('email', 'guide@tribaltours.test')->first();
+        $tourist = User::query()->where('email', 'tourist@tribaltours.test')->first();
 
         $this->assertNotNull($guide);
         $this->assertNotNull($tourist);
@@ -43,8 +43,8 @@ class DatabaseSeederMessagingTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         $this->seed(DatabaseSeeder::class);
 
-        $guide = User::query()->where('email', 'guide@trbltours.test')->first();
-        $tourist = User::query()->where('email', 'tourist@trbltours.test')->first();
+        $guide = User::query()->where('email', 'guide@tribaltours.test')->first();
+        $tourist = User::query()->where('email', 'tourist@tribaltours.test')->first();
 
         $this->assertNotNull($guide);
         $this->assertNotNull($tourist);

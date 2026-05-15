@@ -45,7 +45,10 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->group(function () {
 Route::middleware(['auth', 'verified'])->prefix('notifications')->name('notifications.')->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('index');
     Route::patch('{notificationId}/read', [NotificationController::class, 'markRead'])->name('read');
+    Route::patch('mark-all-read', [NotificationController::class, 'markAllRead'])->name('mark-all-read');
     Route::post('read-all', [NotificationController::class, 'markAllRead'])->name('read-all');
+    Route::delete('clear-all', [NotificationController::class, 'clearAll'])->name('clear-all');
+    Route::delete('{notificationId}', [NotificationController::class, 'destroy'])->name('destroy');
 });
 
 Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('booking')->name('booking.')->group(function () {

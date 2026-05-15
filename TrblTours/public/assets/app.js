@@ -1,18 +1,22 @@
 (function () {
     const ROLE_KEY = 'role';
-    const LIKES_KEY = 'trbltours_likes';
-    const NOTIFICATIONS_KEY = 'trbltours_notifications';
-    const ACTIVE_PAGE_KEY = 'trbltours_active_page';
-    const BOOKING_DRAFT_KEY = 'trbltours_booking_draft';
-    const BOOKING_HISTORY_KEY = 'trbltours_booking_history';
-    const TOUR_OVERRIDES_KEY = 'trbltours_tour_overrides';
-    const ACCOUNT_CACHE_KEY = 'trbltours_account_cache_v1';
-    const GUIDE_TOURS_KEY = 'trbltours_guide_tours_v1';
-    const BOOKING_PROCESSING_LOCK_KEY = 'trbltours_booking_processing_lock';
-    const TOURIST_REQUESTS_KEY = 'trbltours_tourist_requests_v1';
-    const GUIDE_NOTIFICATIONS_KEY = 'trbltours_guide_notifications_v1';
-    const GUIDE_CONVERSATIONS_KEY = 'trbltours_guide_conversations_v1';
+    const LIKES_KEY = 'tribaltours_likes';
+    const NOTIFICATIONS_KEY = 'tribaltours_notifications';
+    const ACTIVE_PAGE_KEY = 'tribaltours_active_page';
+    const BOOKING_DRAFT_KEY = 'tribaltours_booking_draft';
+    const BOOKING_HISTORY_KEY = 'tribaltours_booking_history';
+    const TOUR_OVERRIDES_KEY = 'tribaltours_tour_overrides';
+    const ACCOUNT_CACHE_KEY = 'tribaltours_account_cache_v1';
+    const GUIDE_TOURS_KEY = 'tribaltours_guide_tours_v1';
+    const BOOKING_PROCESSING_LOCK_KEY = 'tribaltours_booking_processing_lock';
+    const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
+    const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
+    const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
     const GUIDE_STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
+    const REQUEST_DEFAULT_REGION = 'Davao del Norte';
+
+    const pendingNotificationDeletes = Object.create(null);
 
     const TOUR_CATALOG = {
         bohol: {
@@ -277,41 +281,33 @@
             topbar.appendChild(topbarRight);
         }
 
-        if (!qs('#topNotificationBtn', topbarRight)) {
-            const bellButton = document.createElement('button');
-            bellButton.type = 'button';
-            bellButton.id = 'topNotificationBtn';
-            bellButton.className = 'icon-btn';
-            bellButton.setAttribute('data-bs-toggle', 'modal');
-            bellButton.setAttribute('data-bs-target', '#topNotificationModal');
-            bellButton.setAttribute('aria-label', 'Open notifications');
-            bellButton.innerHTML = '<i class="fa-solid fa-bell"></i><span id="topNotificationBadge" class="unread-badge">0</span>';
-            topbarRight.prepend(bellButton);
+        const legacyModal = qs('#topNotificationModal');
+        if (legacyModal) {
+            legacyModal.remove();
         }
 
-        if (!qs('#topNotificationModal')) {
-            const modal = document.createElement('div');
-            modal.className = 'modal fade notification-modal';
-            modal.id = 'topNotificationModal';
-            modal.tabIndex = -1;
-            modal.setAttribute('aria-hidden', 'true');
-            modal.innerHTML = [
-                '<div class="modal-dialog modal-dialog-centered">',
-                '<div class="modal-content">',
-                '<div class="modal-header">',
-                '<h2 class="h5 mb-0">Notifications</h2>',
-                '<div class="notification-modal-actions">',
-                '<button id="topMarkAllRead" class="btn-soft py-1 px-3" type="button">Mark all read</button>',
-                '<button class="btn-close" type="button" data-bs-dismiss="modal"></button>',
+        if (!qs('#topNotificationDropdown', topbarRight)) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'dropdown notification-dropdown';
+            wrapper.id = 'topNotificationDropdown';
+            wrapper.innerHTML = [
+                '<button type="button" id="topNotificationBtn" class="icon-btn" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Open notifications">',
+                '<i class="fa-solid fa-bell"></i><span id="topNotificationBadge" class="unread-badge">0</span>',
+                '</button>',
+                '<div class="dropdown-menu dropdown-menu-end notification-dropdown-menu" id="topNotificationMenu">',
+                '<div class="notification-dropdown-header">',
+                '<strong>Notifications</strong>',
+                '<div class="notification-dropdown-actions">',
+                '<button id="topMarkAllRead" class="btn-soft py-1 px-2" type="button">Mark all read</button>',
                 '</div>',
                 '</div>',
-                '<div class="modal-body pt-2">',
-                '<div id="topNotificationList" class="notification-modal-list"></div>',
-                '</div>',
+                '<div id="topNotificationList" class="notification-dropdown-list"></div>',
+                '<div class="notification-dropdown-footer">',
+                '<button id="topClearAllNotifications" class="btn-soft py-1 px-2" type="button">Clear all notifications</button>',
                 '</div>',
                 '</div>'
             ].join('');
-            document.body.appendChild(modal);
+            topbarRight.prepend(wrapper);
         }
 
         const markAll = qs('#topMarkAllRead');
@@ -328,6 +324,27 @@
                 });
             });
             markAll.dataset.boundClick = 'true';
+        }
+
+        const clearAll = qs('#topClearAllNotifications');
+        if (clearAll && !clearAll.dataset.boundClick) {
+            clearAll.addEventListener('click', function () {
+                const current = getNotifications();
+                if (!current.length) {
+                    showToast('No notifications to clear.', 'secondary');
+                    return;
+                }
+
+                setNotifications([]);
+                renderNotifications();
+                closeDropdownByButtonId('topNotificationBtn');
+                clearAllNotifications().catch(function () {
+                    setNotifications(current);
+                    renderNotifications();
+                    showToast('Unable to clear notifications right now.', 'danger');
+                });
+            });
+            clearAll.dataset.boundClick = 'true';
         }
 
         const sidebarNotifDropdown = qs('.sidebar-nav .dropdown .side-link.has-notif');
@@ -662,6 +679,11 @@
             id: String(payload.id || 'notif-' + Date.now()),
             type: String(payload.type || 'general'),
             text: String(payload.text || 'New notification.'),
+            fullText: String(payload.fullText || payload.text || 'New notification.'),
+            actorName: String(payload.actorName || ''),
+            actorAvatar: String(payload.actorAvatar || ''),
+            actionText: String(payload.actionText || ''),
+            targetTitle: String(payload.targetTitle || ''),
             time: String(payload.time || 'just now'),
             read: Boolean(payload.read),
             payload: payload.payload && typeof payload.payload === 'object' ? payload.payload : {},
@@ -703,8 +725,32 @@
     }
 
     function markAllNotificationsRead() {
-        return apiRequest('/notifications/read-all', {
-            method: 'POST',
+        return apiRequest('/notifications/mark-all-read', {
+            method: 'PATCH',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        });
+    }
+
+    function deleteNotification(notificationId) {
+        if (!notificationId) {
+            return Promise.resolve(null);
+        }
+
+        return apiRequest('/notifications/' + encodeURIComponent(String(notificationId)), {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        });
+    }
+
+    function clearAllNotifications() {
+        return apiRequest('/notifications/clear-all', {
+            method: 'DELETE',
             headers: {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': getCsrfToken()
@@ -741,16 +787,22 @@
         const current = Array.isArray(requests) ? requests : [];
         const item = {
             id: payload.id || ('tourist-request-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6)),
+            touristId: payload.touristId ? String(payload.touristId) : null,
             touristName: String(payload.touristName || 'Tourist').trim(),
             touristAvatar: normalizeGuideAssetPath(payload.touristAvatar || 'images/manila.jpg'),
             title: String(payload.title || 'Tourist request').trim(),
+            description: String(payload.description || '').trim(),
             location: String(payload.location || 'Philippines').trim(),
             budgetMin: Math.max(0, Number(payload.budgetMin || 0)),
             budgetMax: Math.max(0, Number(payload.budgetMax || 0)),
-            duration: String(payload.duration || 'Flexible').trim(),
-            travelers: String(payload.travelers || '1 traveler').trim(),
+            duration: String(payload.duration || payload.duration_label || 'Flexible').trim(),
+            travelers: String(payload.travelers || payload.travelers_label || '1 traveler').trim(),
             interests: Array.isArray(payload.interests) ? payload.interests : [],
-            createdAt: new Date().toISOString()
+            status: String(payload.status || 'open').trim().toLowerCase() || 'open',
+            isActive: payload.isActive !== false,
+            selectedGuideId: payload.selectedGuideId ? String(payload.selectedGuideId) : null,
+            comments: Array.isArray(payload.comments) ? payload.comments : [],
+            createdAt: String(payload.createdAt || new Date().toISOString())
         };
         localStorage.setItem(TOURIST_REQUESTS_KEY, JSON.stringify([item].concat(current).slice(0, 80)));
     }
@@ -872,10 +924,10 @@
     function renderNotifications() {
         const list = getNotifications();
         const sidebarContainer = qs('#notificationList');
-        const modalContainer = qs('#topNotificationList');
+        const topbarContainer = qs('#topNotificationList');
         const sidebarBadge = qs('#notificationBadge');
         const topbarBadge = qs('#topNotificationBadge');
-        if (!sidebarContainer && !modalContainer && !sidebarBadge && !topbarBadge) {
+        if (!sidebarContainer && !topbarContainer && !sidebarBadge && !topbarBadge) {
             return;
         }
 
@@ -893,29 +945,64 @@
             topbarBadge.style.display = unread > 0 ? 'grid' : 'none';
         }
 
+        function buildNotificationText(item) {
+            const actorName = String(item.actorName || '').trim();
+            const actionText = String(item.actionText || '').trim();
+            const targetTitle = String(item.targetTitle || '').trim();
+            const fallback = String(item.fullText || item.text || 'New notification.').trim();
+
+            if (fallback) {
+                return fallback;
+            }
+
+            const parts = [];
+            if (actorName && actorName !== 'System') {
+                parts.push(actorName);
+            }
+            if (actionText) {
+                parts.push(actionText);
+            }
+            let label = parts.join(' ').trim();
+            if (targetTitle) {
+                label = (label ? label + ' ' : '') + '"' + targetTitle + '"';
+            }
+            return label || 'New notification.';
+        }
+
+        function resolveAvatar(item) {
+            const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
+            const source = item.actorAvatar || payload.actorAvatar || payload.senderAvatar || payload.avatar || 'images/manila.jpg';
+            return normalizeTourAssetPath(source);
+        }
+
         function renderList(container) {
             if (!container) {
                 return;
             }
             container.innerHTML = '';
+            if (!list.length) {
+                container.innerHTML = '<p class="small text-muted mb-0 px-2 py-2">No notifications yet.</p>';
+                return;
+            }
+
             list.forEach(function (item) {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'dropdown-item notification-item' + (item.read ? '' : ' unread');
-                button.dataset.notificationId = String(item.id);
-                button.innerHTML = [
-                    '<div class="notification-item__content">',
-                    '<div class="notification-item__title">', item.text, '</div>',
-                    '<small class="notification-item__time">', item.time, '</small>',
-                    '</div>'
+                const id = String(item.id || '');
+                const actorName = String(item.actorName || 'System').trim() || 'System';
+                const row = document.createElement('div');
+                row.className = 'notification-entry' + (item.read ? '' : ' unread');
+                row.dataset.notificationId = id;
+                row.innerHTML = [
+                    '<span class="notification-entry__dot"', (item.read ? ' hidden' : ''), '></span>',
+                    '<img class="notification-entry__avatar" src="', escapeHtml(resolveAvatar(item)), '" alt="', escapeHtml(actorName), ' avatar">',
+                    '<button type="button" class="notification-entry__main" data-notification-open="', escapeHtml(id), '">',
+                    '<span class="notification-entry__text">', escapeHtml(buildNotificationText(item)), '</span>',
+                    '<small class="notification-entry__time">', escapeHtml(item.time || 'just now'), '</small>',
+                    '</button>',
+                    '<button type="button" class="notification-entry__delete" data-notification-delete="', escapeHtml(id), '" aria-label="Delete notification">',
+                    '<i class="fa-solid fa-xmark"></i>',
+                    '</button>'
                 ].join('');
-                if (!item.read) {
-                    const dot = document.createElement('span');
-                    dot.className = 'badge rounded-pill text-bg-warning notification-item__badge';
-                    dot.textContent = 'new';
-                    button.appendChild(dot);
-                }
-                container.appendChild(button);
+                container.appendChild(row);
             });
         }
 
@@ -924,11 +1011,68 @@
                 return;
             }
             container.addEventListener('click', function (event) {
-                const target = event.target.closest('[data-notification-id]');
+                const deleteTarget = event.target.closest('[data-notification-delete]');
+                if (deleteTarget) {
+                    const deleteId = String(deleteTarget.getAttribute('data-notification-delete') || '');
+                    if (!deleteId || pendingNotificationDeletes[deleteId]) {
+                        return;
+                    }
+
+                    const currentList = getNotifications();
+                    const deleteIndex = currentList.findIndex(function (item) {
+                        return String(item.id) === deleteId;
+                    });
+                    if (deleteIndex < 0) {
+                        return;
+                    }
+
+                    const removedItem = currentList[deleteIndex];
+                    const nextList = currentList.filter(function (item) {
+                        return String(item.id) !== deleteId;
+                    });
+                    setNotifications(nextList);
+                    renderNotifications();
+
+                    const timer = window.setTimeout(function () {
+                        deleteNotification(deleteId).catch(function () {
+                            const restored = getNotifications();
+                            const insertAt = Math.min(deleteIndex, restored.length);
+                            restored.splice(insertAt, 0, removedItem);
+                            setNotifications(restored);
+                            renderNotifications();
+                            showToast('Unable to delete notification right now.', 'danger');
+                        }).finally(function () {
+                            delete pendingNotificationDeletes[deleteId];
+                        });
+                    }, PENDING_NOTIFICATION_DELETE_DELAY);
+
+                    pendingNotificationDeletes[deleteId] = {
+                        item: removedItem,
+                        index: deleteIndex,
+                        timerId: timer,
+                    };
+
+                    showActionToast('Notification removed.', 'Undo', function () {
+                        const pending = pendingNotificationDeletes[deleteId];
+                        if (!pending) {
+                            return;
+                        }
+                        window.clearTimeout(pending.timerId);
+                        const restored = getNotifications();
+                        const insertAt = Math.min(pending.index, restored.length);
+                        restored.splice(insertAt, 0, pending.item);
+                        setNotifications(restored);
+                        renderNotifications();
+                        delete pendingNotificationDeletes[deleteId];
+                    }, 'dark', 4200);
+                    return;
+                }
+
+                const target = event.target.closest('[data-notification-open]');
                 if (!target) {
                     return;
                 }
-                const id = String(target.dataset.notificationId || '');
+                const id = String(target.getAttribute('data-notification-open') || '');
                 const currentList = getNotifications();
                 const selectedItem = currentList.find(function (item) {
                     return String(item.id) === id;
@@ -944,6 +1088,7 @@
                 markNotificationRead(id).catch(function () {
                     return null;
                 });
+                closeDropdownByButtonId('topNotificationBtn');
                 const route = getNotificationRoute(selectedItem);
                 if (route) {
                     window.location.href = route;
@@ -953,9 +1098,19 @@
         }
 
         renderList(sidebarContainer);
-        renderList(modalContainer);
+        renderList(topbarContainer);
         bindListClick(sidebarContainer);
-        bindListClick(modalContainer);
+        bindListClick(topbarContainer);
+    }
+
+    function closeDropdownByButtonId(buttonId) {
+        const trigger = qs('#' + String(buttonId || ''));
+        if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        const instance = window.bootstrap.Dropdown.getInstance(trigger) || window.bootstrap.Dropdown.getOrCreateInstance(trigger);
+        instance.hide();
     }
 
     function getLikes() {
@@ -1249,6 +1404,48 @@
         });
     }
 
+    function showActionToast(message, actionLabel, onAction, kind, delay) {
+        const host = qs('#toastHost') || createToastHost();
+        const toast = document.createElement('div');
+        toast.className = 'toast align-items-center text-bg-' + (kind || 'dark') + ' border-0';
+        toast.setAttribute('role', 'status');
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'd-flex align-items-center';
+
+        const body = document.createElement('div');
+        body.className = 'toast-body';
+        body.textContent = String(message || '');
+        wrapper.appendChild(body);
+
+        if (actionLabel && typeof onAction === 'function') {
+            const actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'btn btn-sm btn-light me-2';
+            actionButton.textContent = String(actionLabel);
+            actionButton.addEventListener('click', function () {
+                onAction();
+                bsToast.hide();
+            });
+            wrapper.appendChild(actionButton);
+        }
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close btn-close-white me-2 m-auto';
+        closeButton.setAttribute('data-bs-dismiss', 'toast');
+        wrapper.appendChild(closeButton);
+
+        toast.appendChild(wrapper);
+        host.appendChild(toast);
+
+        const bsToast = new bootstrap.Toast(toast, { delay: Number(delay || 4200) });
+        bsToast.show();
+        toast.addEventListener('hidden.bs.toast', function () {
+            toast.remove();
+        });
+    }
+
     function createToastHost() {
         const host = document.createElement('div');
         host.id = 'toastHost';
@@ -1279,9 +1476,26 @@
         });
     }
 
+    function resolveRequestRegionKey(value) {
+        const text = String(value || '').trim().toLowerCase();
+        if (!text) {
+            return 'all';
+        }
+        if (text.indexOf('davao') !== -1 || text.indexOf('mindanao') !== -1) {
+            return 'davao';
+        }
+        if (text.indexOf('cebu') !== -1 || text.indexOf('bohol') !== -1 || text.indexOf('palawan') !== -1 || text.indexOf('visayas') !== -1) {
+            return 'cebu';
+        }
+        if (text.indexOf('manila') !== -1 || text.indexOf('ncr') !== -1 || text.indexOf('luzon') !== -1) {
+            return 'manila';
+        }
+        return 'all';
+    }
+
     function buildRequestCard(data) {
         return [
-            '<article class="feed-item request-card" data-type="request" data-region="', data.region || 'all', '" data-price="', data.budgetMax || 2000, '" data-latest="', Date.now(), '" data-search="',
+            '<article class="feed-item request-card" data-type="request" data-region="', data.regionKey || resolveRequestRegionKey(data.region), '" data-price="', data.budgetMax || 2000, '" data-latest="', Date.now(), '" data-search="',
             (data.title + ' ' + data.location + ' ' + (data.interests || '')).toLowerCase(),
             '">',
             '<div class="d-flex justify-content-between align-items-start gap-2">',
@@ -1330,11 +1544,16 @@
         const adultsDisplay = qs('#adultsCount');
         const childrenDisplay = qs('#childrenCount');
         const createForm = qs('#createRequestForm');
+        const regionInput = qs('#reqRegion', createForm || document);
         const interestOptions = qs('#interestOptions', createForm || document);
         const customInterestInput = qs('#customInterestInput', createForm || document);
         const addInterestBtn = qs('#addInterestBtn', createForm || document);
         const visibleCounter = qs('#visibleCounter');
         let dbTours = [];
+
+        if (regionInput && !String(regionInput.value || '').trim()) {
+            regionInput.value = REQUEST_DEFAULT_REGION;
+        }
 
         function mapLegacyCardToDbTour(card, tours) {
             if (!card || !Array.isArray(tours) || !tours.length) {
@@ -1721,7 +1940,7 @@
                 const high = Number(payload.budgetMax || payload.budget || payload.budgetMin || 0);
                 const selectedInterests = collectSelectedInterests();
                 const destinationText = String(payload.location || 'Philippines').trim();
-                const regionText = String(payload.region || '').trim();
+                const regionText = String(payload.region || REQUEST_DEFAULT_REGION).trim();
                 const durationText = String(payload.duration || (durationInput ? durationInput.value : '3')).trim();
                 const detailText = String(payload.details || '').trim();
                 const adultsCount = Math.max(1, Number(payload.adults || 1));
@@ -1748,11 +1967,19 @@
                     return;
                 }
 
+                if (!regionText) {
+                    showToast('Region is required.', 'warning');
+                    if (regionInput) {
+                        regionInput.focus();
+                    }
+                    return;
+                }
+
                 const requestPayload = {
                     title: payload.title || 'New Tourist Request',
                     description: detailText || summaryText,
                     location: destinationText,
-                    region: regionText || null,
+                    region: regionText,
                     duration: durationText,
                     duration_label: durationLabel,
                     budget: payload.budget || (budgetInput ? budgetInput.value : payload.budgetMin || 0),
@@ -1773,6 +2000,9 @@
                         item.remove();
                     });
                     syncModalBudget();
+                    if (regionInput) {
+                        regionInput.value = REQUEST_DEFAULT_REGION;
+                    }
                     if (durationOutput && durationInput) {
                         durationOutput.textContent = durationInput.value + ' days';
                     }
@@ -1805,7 +2035,7 @@
             const observer = new IntersectionObserver(function (entries) {
                 entries.forEach(function (entry) {
                     if (entry.isIntersecting) {
-                        window.dispatchEvent(new CustomEvent('trbltours:infinite-scroll', {
+                        window.dispatchEvent(new CustomEvent('tribaltours:infinite-scroll', {
                             detail: { source: 'index-feed' }
                         }));
                         showToast('Infinite scroll hook reached.', 'dark');
@@ -1871,13 +2101,11 @@
             requestFilterBar.innerHTML = [
                 '<button type="button" class="tab-btn active" data-request-filter="all">All <span class="request-filter-count" data-request-filter-count="all">0</span></button>',
                 '<button type="button" class="tab-btn" data-request-filter="open">Open <span class="request-filter-count" data-request-filter-count="open">0</span></button>',
-                '<button type="button" class="tab-btn" data-request-filter="negotiating">Negotiating <span class="request-filter-count" data-request-filter-count="negotiating">0</span></button>',
-                '<button type="button" class="tab-btn" data-request-filter="selected">Selected Guides <span class="request-filter-count" data-request-filter-count="selected">0</span></button>',
-                '<button type="button" class="tab-btn" data-request-filter="completed">Completed <span class="request-filter-count" data-request-filter-count="completed">0</span></button>'
+                '<button type="button" class="tab-btn" data-request-filter="selected">Selected Guides <span class="request-filter-count" data-request-filter-count="selected">0</span></button>'
             ].join('');
             requestGrid.parentElement.insertBefore(requestFilterBar, requestGrid);
         }
-        qsa('[data-request-filter="cancelled"]', requestFilterBar || document).forEach(function (node) {
+        qsa('[data-request-filter="cancelled"], [data-request-filter="negotiating"], [data-request-filter="completed"]', requestFilterBar || document).forEach(function (node) {
             node.remove();
         });
         if (requestGrid) {
@@ -1916,16 +2144,13 @@
         const statsElements = {
             total_requests: qs('[data-request-stats="total_requests"]'),
             open_requests: qs('[data-request-stats="open_requests"]'),
-            selected_guides: qs('[data-request-stats="selected_guides"]'),
-            completed: qs('[data-request-stats="completed"]')
+            selected_guides: qs('[data-request-stats="selected_guides"]')
         };
         const filterButtons = qsa('[data-request-filter]', requestFilterBar || document);
         const filterCountElements = {
             all: qs('[data-request-filter-count="all"]', requestFilterBar || document),
             open: qs('[data-request-filter-count="open"]', requestFilterBar || document),
-            negotiating: qs('[data-request-filter-count="negotiating"]', requestFilterBar || document),
-            selected: qs('[data-request-filter-count="selected"]', requestFilterBar || document),
-            completed: qs('[data-request-filter-count="completed"]', requestFilterBar || document)
+            selected: qs('[data-request-filter-count="selected"]', requestFilterBar || document)
         };
 
         function applyRequestStats(stats) {
@@ -1953,15 +2178,13 @@
             const base = {
                 all: 0,
                 open: 0,
-                negotiating: 0,
-                selected: 0,
-                completed: 0
+                selected: 0
             };
 
             (Array.isArray(requests) ? requests : []).forEach(function (request) {
                 const bucket = requestStatusKey(request);
-                base.all += 1;
-                if (Object.prototype.hasOwnProperty.call(base, bucket)) {
+                if (bucket === 'open' || bucket === 'selected') {
+                    base.all += 1;
                     base[bucket] += 1;
                 }
             });
@@ -1975,9 +2198,7 @@
             const resolved = {
                 all: Number(source.total_requests),
                 open: Number(source.open_requests),
-                selected: Number(source.selected_guides),
-                completed: Number(source.completed),
-                negotiating: derived.negotiating
+                selected: Number(source.selected_guides)
             };
 
             Object.keys(filterCountElements).forEach(function (key) {
@@ -2051,58 +2272,37 @@
 
         function requestStatusKey(request) {
             const bucketFromApi = String(request && request.statusBucket ? request.statusBucket : '').toLowerCase();
-            if (['open', 'negotiating', 'selected', 'completed', 'cancelled'].indexOf(bucketFromApi) !== -1) {
-                return bucketFromApi;
+            const hasSelectedGuide = !!(request && request.selectedGuideId);
+            const isActive = !(request && request.isActive === false);
+
+            if (hasSelectedGuide || bucketFromApi === 'selected') {
+                return 'selected';
+            }
+
+            if ((bucketFromApi === 'open' || bucketFromApi === 'negotiating') && isActive) {
+                return 'open';
             }
 
             const rawStatus = String(request && request.status ? request.status : '').toLowerCase();
-            const hasSelectedGuide = !!(request && request.selectedGuideId);
+            if ((rawStatus === 'open' || rawStatus === 'negotiating') && isActive) {
+                return 'open';
+            }
 
-            if (rawStatus === 'completed') {
-                return 'completed';
-            }
-            if (rawStatus === 'cancelled' || (rawStatus === 'closed' && !hasSelectedGuide)) {
-                return 'cancelled';
-            }
-            if (hasSelectedGuide) {
-                return 'selected';
-            }
-            if (rawStatus === 'negotiating') {
-                return 'negotiating';
-            }
-            return 'open';
+            return 'hidden';
         }
 
         function requestBadgeClass(request) {
             const value = requestStatusKey(request);
-            if (value === 'completed') {
-                return 'badge-complete';
-            }
-            if (value === 'cancelled') {
-                return 'badge-cancelled';
-            }
             if (value === 'selected') {
                 return 'badge-selected';
-            }
-            if (value === 'negotiating') {
-                return 'badge-negotiating';
             }
             return 'badge-open';
         }
 
         function requestStatusLabel(request) {
             const value = requestStatusKey(request);
-            if (value === 'completed') {
-                return 'Completed';
-            }
-            if (value === 'cancelled') {
-                return 'Cancelled';
-            }
             if (value === 'selected') {
                 return 'Selected Guide';
-            }
-            if (value === 'negotiating') {
-                return 'Negotiating';
             }
             return 'Open';
         }
@@ -2127,7 +2327,39 @@
 
         function canSelectGuideFromRequest(request) {
             const key = requestStatusKey(request);
-            return key === 'open' || key === 'selected';
+            return key === 'open';
+        }
+
+        function collectGuideCandidates(comments, acc) {
+            const list = Array.isArray(comments) ? comments : [];
+            const target = Array.isArray(acc) ? acc : [];
+
+            list.forEach(function (entry) {
+                if (!entry || typeof entry !== 'object') {
+                    return;
+                }
+                const role = String(entry.authorRole || '').toLowerCase();
+                const guideId = String(entry.authorId || entry.guideId || '').trim();
+                if (role === 'guide' && guideId) {
+                    target.push({
+                        guideId: guideId,
+                        commentId: String(entry.id || ''),
+                        guideName: String(entry.authorName || entry.guideName || 'Guide').trim() || 'Guide',
+                        offerAmount: entry.offerAmount != null ? Number(entry.offerAmount) : null,
+                    });
+                }
+                collectGuideCandidates(entry.replies, target);
+            });
+
+            return target;
+        }
+
+        function getPrimaryGuideCandidate(request) {
+            const candidates = collectGuideCandidates(request && request.comments, []);
+            if (!candidates.length) {
+                return null;
+            }
+            return candidates[0];
         }
 
         function renderCommentNode(request, comment, depth) {
@@ -2314,7 +2546,17 @@
             latestRequestRows.forEach(function (request) {
                 const id = String(request.id || '');
                 const bucket = requestStatusKey(request);
+                if (bucket !== 'open' && bucket !== 'selected') {
+                    return;
+                }
+
                 dbRequestMap[id] = request;
+                const primaryCandidate = getPrimaryGuideCandidate(request);
+                const canSelectCardGuide = bucket === 'open';
+                const openMessageButton = canSelectCardGuide && primaryCandidate
+                    ? '<button class="btn-soft" data-open-comment-message="' + escapeHtml(primaryCandidate.guideId) + '" data-request-id="' + escapeHtml(id) + '"><i class="fa-regular fa-comments me-1"></i>Open Message</button>'
+                    : '';
+
                 const card = document.createElement('article');
                 card.className = 'request-manage-card';
                 card.dataset.dbRequest = 'true';
@@ -2357,11 +2599,9 @@
                     '</div>',
                     '<div class="d-flex gap-2 mt-3 flex-wrap">',
                     '<button class="btn-ghost" data-toggle-thread><i class="fa-regular fa-comments me-1"></i>View Comments</button>',
+                    openMessageButton,
                     (String(request.status || '').toLowerCase() !== 'completed'
                         ? '<button class="btn-danger" data-delete-request><i class="fa-solid fa-trash me-1"></i>Delete Request</button>'
-                        : ''),
-                    ((String(request.status || '').toLowerCase() !== 'completed' && String(request.status || '').toLowerCase() !== 'cancelled')
-                        ? '<button class="btn-gold" data-complete-request><i class="fa-solid fa-check me-1"></i>Mark Complete</button>'
                         : ''),
                     '</div>',
                     '</div>'
@@ -2655,22 +2895,6 @@
                         syncMyRequestsFromApi();
                     }).catch(function (error) {
                         showToast(error && error.message ? error.message : 'Unable to unselect guide right now.', 'danger');
-                    });
-                    return;
-                }
-
-                const completeBtn = event.target.closest('[data-complete-request]');
-                if (completeBtn) {
-                    const card = completeBtn.closest('[data-request-id]');
-                    const requestId = card ? String(card.dataset.requestId || '') : '';
-                    if (!requestId || !card || card.dataset.dbRequest !== 'true') {
-                        return;
-                    }
-                    updateRequestStatus(requestId, 'completed').then(function () {
-                        showToast('Request marked complete.', 'success');
-                        syncMyRequestsFromApi();
-                    }).catch(function (error) {
-                        showToast(error && error.message ? error.message : 'Unable to mark request complete.', 'danger');
                     });
                     return;
                 }
@@ -3136,7 +3360,7 @@
 
             const paymentStatus = String(booking.paymentStatus || '').toLowerCase();
             const isPaid = paymentStatus === 'paid';
-            const statusValue = String(booking.state || 'pending');
+            const statusValue = String(booking.state || 'pending').toLowerCase();
 
             if (receiptTourName) {
                 receiptTourName.textContent = booking.tourTitle || 'Tour Booking';
@@ -3161,11 +3385,30 @@
             }
 
             if (receiptAvailabilityMessage) {
-                if (isPaid) {
+                let helperMessage = '';
+                let helperTone = 'alert-info';
+
+                if (statusValue === 'pending') {
+                    helperMessage = 'Pending booking. Please wait for the guide to accept it.';
+                    helperTone = 'alert-warning';
+                } else if (statusValue === 'completed') {
+                    helperMessage = 'Booking completed. Your receipt details are final.';
+                    helperTone = 'alert-success';
+                } else if (statusValue === 'cancelled') {
+                    helperMessage = 'This booking was cancelled.';
+                    helperTone = 'alert-secondary';
+                } else if (!isPaid) {
+                    helperMessage = 'Receipt will be available once payment is confirmed.';
+                }
+
+                receiptAvailabilityMessage.classList.remove('alert-info', 'alert-warning', 'alert-success', 'alert-secondary');
+                receiptAvailabilityMessage.classList.add(helperTone);
+
+                if (!helperMessage) {
                     receiptAvailabilityMessage.style.display = 'none';
                 } else {
                     receiptAvailabilityMessage.style.display = '';
-                    receiptAvailabilityMessage.textContent = 'Receipt will be available once payment is confirmed.';
+                    receiptAvailabilityMessage.textContent = helperMessage;
                 }
             }
 
@@ -3853,6 +4096,8 @@
         const tour = getTourById(params.get('tour'));
         const reviewListHost = qs('#tourPreviewReviewList');
         const reviewEmpty = qs('#tourPreviewReviewEmpty');
+        const similarListHost = qs('#tourPreviewSimilarList');
+        const similarEmpty = qs('#tourPreviewSimilarEmpty');
         const guestInput = qs('#previewGuests');
         const dateInput = qs('#previewDate');
         const timeInput = qs('#previewTime');
@@ -3861,7 +4106,19 @@
         const bookNowHint = qs('#previewBookNowHint');
         const likeBtn = qs('#previewLikeBtn');
         const manualApproval = String(tour.reservationType || '').toLowerCase() === 'manual approval';
-        const availabilitySessionKey = 'trbltours_availability_checked_' + String(tour.id || '');
+        const availabilitySessionKey = 'tribaltours_availability_checked_' + String(tour.id || '');
+        const routeTourRef = String(params.get('tour') || '').trim().toLowerCase();
+        const currentTourId = String(tour.id || '').trim().toLowerCase();
+        const currentTourSlug = String(tour.slug || '').trim().toLowerCase();
+        const currentTourLegacy = String(tour.legacyKey || '').trim().toLowerCase();
+        const currentTourTitle = normalizeTourLookupKey(tour.title || '');
+        const currentTourLocation = normalizeTourLookupKey(tour.location || '');
+        const currentTourRegion = resolveRequestRegionKey(String(tour.region || '') + ' ' + String(tour.location || ''));
+        const currentTourPrice = Number(tour.price || 0);
+        const currentTourTagSet = new Set((Array.isArray(tour.tags) ? tour.tags : []).map(function (tag) {
+            return String(tag || '').trim().toLowerCase();
+        }).filter(Boolean));
+        let similarFeedRows = [];
 
         const hasCheckedAvailability = function () {
             return sessionStorage.getItem(availabilitySessionKey) === '1';
@@ -3928,6 +4185,205 @@
             });
         };
 
+        const normalizeSimilarTour = function (item) {
+            const raw = item && typeof item === 'object' ? item : {};
+            const rawId = String(raw.id || '').trim();
+            const rawSlug = String(raw.slug || '').trim();
+            const rawLegacy = String(raw.legacyKey || '').trim();
+
+            let base = null;
+            if (rawId) {
+                base = getTourById(rawId);
+            }
+            if (!base && rawSlug) {
+                base = getTourById(rawSlug);
+            }
+            if (!base && rawLegacy) {
+                base = getTourById(rawLegacy);
+            }
+            base = base && typeof base === 'object' ? base : {};
+
+            const tags = (Array.isArray(raw.tags) ? raw.tags : (Array.isArray(base.tags) ? base.tags : []))
+                .map(function (tag) {
+                    return String(tag || '').trim();
+                })
+                .filter(Boolean)
+                .slice(0, 6);
+
+            return {
+                id: rawId || String(base.id || rawSlug || rawLegacy || '').trim(),
+                slug: rawSlug || String(base.slug || '').trim(),
+                legacyKey: rawLegacy || String(base.legacyKey || '').trim(),
+                title: String(raw.title || base.title || 'Tour listing').trim(),
+                location: String(raw.location || base.location || 'Philippines').trim(),
+                rating: Math.max(0, Math.min(5, Number(raw.rating || base.rating || 0))),
+                reviews: Math.max(0, Math.round(Number(raw.reviews || base.reviews || 0))),
+                duration: String(raw.duration || raw.durationHours || base.duration || base.durationHours || 'Flexible').trim(),
+                pax: String(raw.pax || base.pax || '1-10 pax').trim(),
+                price: Math.max(0, Number(raw.price || base.price || 0)),
+                image: normalizeTourAssetPath(raw.image || raw.coverImage || base.image || 'images/pangasinan.jpg'),
+                tags: tags,
+                latest: Number(raw.latest || base.latest || Date.now()),
+                regionText: String(raw.region || base.region || '').trim()
+            };
+        };
+
+        const isCurrentTourEntry = function (entry) {
+            const target = entry && typeof entry === 'object' ? entry : {};
+            const id = String(target.id || '').trim().toLowerCase();
+            const slug = String(target.slug || '').trim().toLowerCase();
+            const legacy = String(target.legacyKey || '').trim().toLowerCase();
+
+            if (routeTourRef && (routeTourRef === id || routeTourRef === slug || routeTourRef === legacy)) {
+                return true;
+            }
+            if (currentTourId && currentTourId === id) {
+                return true;
+            }
+            if (currentTourSlug && currentTourSlug === slug) {
+                return true;
+            }
+            if (currentTourLegacy && currentTourLegacy === legacy) {
+                return true;
+            }
+
+            const title = normalizeTourLookupKey(target.title || '');
+            const location = normalizeTourLookupKey(target.location || '');
+            if (title && currentTourTitle && title === currentTourTitle) {
+                if (!location || !currentTourLocation) {
+                    return true;
+                }
+                return location === currentTourLocation
+                    || location.indexOf(currentTourLocation) !== -1
+                    || currentTourLocation.indexOf(location) !== -1;
+            }
+
+            return false;
+        };
+
+        const computeSimilarityScore = function (entry) {
+            const region = resolveRequestRegionKey(String(entry.regionText || '') + ' ' + String(entry.location || ''));
+            const tagOverlap = (Array.isArray(entry.tags) ? entry.tags : []).reduce(function (sum, tag) {
+                const key = String(tag || '').trim().toLowerCase();
+                return currentTourTagSet.has(key) ? sum + 1 : sum;
+            }, 0);
+            const priceDelta = Math.abs(Number(entry.price || 0) - currentTourPrice);
+
+            let score = 0;
+            if (region === currentTourRegion) {
+                score += 90;
+            }
+            score += tagOverlap * 24;
+            score += Math.min(Number(entry.rating || 0) * 2, 10);
+            score += Math.min(Number(entry.reviews || 0) / 40, 10);
+            score -= Math.min(priceDelta / 120, 35);
+            return score;
+        };
+
+        const renderSimilarTours = function () {
+            if (!similarListHost) {
+                return;
+            }
+
+            const sourceRows = [];
+            if (Array.isArray(similarFeedRows)) {
+                sourceRows.push.apply(sourceRows, similarFeedRows);
+            }
+
+            Object.keys(TOUR_CATALOG).forEach(function (key) {
+                sourceRows.push(Object.assign({
+                    id: key,
+                    legacyKey: key,
+                }, TOUR_CATALOG[key] || {}));
+            });
+
+            const guideCatalog = getGuideToursCatalog();
+            Object.keys(guideCatalog).forEach(function (key) {
+                sourceRows.push(Object.assign({
+                    id: key,
+                }, guideCatalog[key] || {}));
+            });
+
+            const seen = Object.create(null);
+            const candidates = sourceRows.map(normalizeSimilarTour).filter(function (entry) {
+                const key = String(
+                    entry.id
+                    || entry.slug
+                    || entry.legacyKey
+                    || normalizeTourLookupKey(String(entry.title || '') + ' ' + String(entry.location || ''))
+                ).trim().toLowerCase();
+
+                if (!key || seen[key] || isCurrentTourEntry(entry)) {
+                    return false;
+                }
+
+                seen[key] = true;
+                return true;
+            });
+
+            const ranked = candidates.sort(function (a, b) {
+                const scoreDiff = computeSimilarityScore(b) - computeSimilarityScore(a);
+                if (scoreDiff !== 0) {
+                    return scoreDiff;
+                }
+                return Number(b.latest || 0) - Number(a.latest || 0);
+            }).slice(0, 4);
+
+            similarListHost.innerHTML = '';
+            if (!ranked.length) {
+                if (similarEmpty) {
+                    similarEmpty.style.display = '';
+                }
+                return;
+            }
+
+            if (similarEmpty) {
+                similarEmpty.style.display = 'none';
+            }
+
+            ranked.forEach(function (entry) {
+                const tourRef = String(entry.id || entry.slug || entry.legacyKey || '').trim();
+                if (!tourRef) {
+                    return;
+                }
+
+                const card = document.createElement('article');
+                card.className = 'tour-preview-similar-card';
+                card.innerHTML = [
+                    '<a class="tour-preview-similar-card__media" href="/tour-preview?tour=', encodeURIComponent(tourRef), '">',
+                    '<img src="', escapeHtml(entry.image || 'images/pangasinan.jpg'), '" alt="', escapeHtml(entry.title || 'Tour listing'), '">',
+                    '</a>',
+                    '<div class="tour-preview-similar-card__body">',
+                    '<p class="tour-preview-similar-card__location">', escapeHtml(entry.location || 'Philippines'), '</p>',
+                    '<h3 class="tour-preview-similar-card__title"><a href="/tour-preview?tour=', encodeURIComponent(tourRef), '">', escapeHtml(entry.title || 'Tour listing'), '</a></h3>',
+                    '<p class="tour-preview-similar-card__meta">', Number(entry.rating || 0).toFixed(2), ' (', String(entry.reviews || 0), ') • ', escapeHtml(entry.duration || 'Flexible'), ' • ', escapeHtml(entry.pax || '1-10 pax'), '</p>',
+                    '<div class="tour-preview-similar-card__footer">',
+                    '<strong>', formatPeso(entry.price), '</strong>',
+                    '<a href="/tour-preview?tour=', encodeURIComponent(tourRef), '" class="btn-soft py-1 px-2">View Tour</a>',
+                    '</div>',
+                    '</div>'
+                ].join('');
+                similarListHost.appendChild(card);
+            });
+        };
+
+        const syncSimilarToursFromApi = function () {
+            return apiRequest('/tourist/tours/feed').then(function (data) {
+                const tours = data && Array.isArray(data.tours) ? data.tours : [];
+                similarFeedRows = tours.slice();
+                upsertGuideTourCatalogEntries(tours.map(function (item) {
+                    return Object.assign({}, item, {
+                        id: String(item && item.id ? item.id : ''),
+                    });
+                }));
+                renderSimilarTours();
+                return tours;
+            }).catch(function () {
+                renderSimilarTours();
+                return [];
+            });
+        };
+
         const setBookNowState = function (enabled, message) {
             if (!bookNowBtn) {
                 return;
@@ -3972,6 +4428,7 @@
         setText('[data-tour-guide-contact]', tour.guideContact || 'N/A');
         setText('[data-tour-guide-social]', tour.guideSocial || 'N/A');
         renderTourReviews(tour.recentReviews || []);
+        renderSimilarTours();
         const guidePhoto = qs('[data-tour-guide-photo]');
         if (guidePhoto) {
             guidePhoto.src = tour.guideAvatar || tour.guidePhoto || 'images/manila.jpg';
@@ -4152,6 +4609,52 @@
                 });
             });
         })();
+
+        syncSimilarToursFromApi();
+        window.setInterval(syncSimilarToursFromApi, 30000);
+        subscribeRealtime('tour-listings', 'tour-listing.updated', function (payload) {
+            const liveTour = payload && payload.tour ? payload.tour : null;
+            if (!liveTour || !liveTour.id) {
+                return;
+            }
+
+            const liveId = String(liveTour.id);
+            const remove = String(liveTour.action || '').toLowerCase() === 'deleted'
+                || liveTour.isActive === false
+                || String(liveTour.status || '').toLowerCase() !== 'published';
+            const index = similarFeedRows.findIndex(function (entry) {
+                return String(entry && entry.id ? entry.id : '') === liveId;
+            });
+
+            if (remove) {
+                if (index >= 0) {
+                    similarFeedRows.splice(index, 1);
+                }
+                renderSimilarTours();
+                return;
+            }
+
+            if (index >= 0) {
+                similarFeedRows[index] = Object.assign({}, similarFeedRows[index], liveTour, {
+                    id: liveId,
+                });
+            } else {
+                similarFeedRows.unshift(Object.assign({}, liveTour, {
+                    id: liveId,
+                }));
+            }
+
+            upsertGuideTourCatalogEntries([Object.assign({}, liveTour, {
+                id: liveId,
+            })]);
+            renderSimilarTours();
+
+            if (isCurrentTourEntry(liveTour)) {
+                setText('[data-tour-rating]', Number(liveTour.rating || 0).toFixed(2));
+                setText('[data-tour-reviews]', String(Math.max(0, Number(liveTour.reviews || 0))));
+                renderTourReviews(liveTour.recentReviews || []);
+            }
+        });
     }
 
     function initBookingDetailsPage() {
@@ -4448,7 +4951,7 @@
         if (receiptBtn) {
             receiptBtn.addEventListener('click', function () {
                 const receiptLines = [
-                    'TrblTours Booking Receipt',
+                    'Tribaltours Booking Receipt',
                     '-------------------------',
                     'Reference: ' + reference,
                     'Tour: ' + tour.title,

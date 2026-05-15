@@ -59,9 +59,9 @@ class TourRequestUpdated implements ShouldBroadcastNow
             $tourRequest->city,
             $tourRequest->province,
         ]);
-        $statusBucket = strtolower(trim((string) $tourRequest->status)) === 'completed'
-            ? 'completed'
-            : ((int) ($tourRequest->selected_guide_id ?? 0) > 0 ? 'selected' : strtolower(trim((string) $tourRequest->status)));
+        $statusBucket = (int) ($tourRequest->selected_guide_id ?? 0) > 0
+            ? 'selected'
+            : strtolower(trim((string) $tourRequest->status));
 
         return [
             'id' => (string) $tourRequest->id,
@@ -80,7 +80,10 @@ class TourRequestUpdated implements ShouldBroadcastNow
             }, is_array($tourRequest->interests) ? $tourRequest->interests : []))),
             'status' => (string) $tourRequest->status,
             'statusBucket' => $statusBucket,
+            'isActive' => (bool) $tourRequest->is_active,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
+            'selectedAt' => optional($tourRequest->selected_at)->toISOString(),
+            'closedAt' => optional($tourRequest->closed_at)->toISOString(),
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
             'selectedGuideAvatar' => $this->resolveAvatarPath($selectedGuide?->avatar_path),
             'comments' => $this->presentComments($tourRequest),

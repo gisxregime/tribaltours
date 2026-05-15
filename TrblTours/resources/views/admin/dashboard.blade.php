@@ -1,6 +1,6 @@
 @extends('layouts.custom.app')
 
-@php($title = 'Admin Dashboard | TrblTours')
+@php($title = 'Admin Dashboard | Tribaltours')
 
 @push('head')
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
@@ -11,7 +11,7 @@
     <div class="content-wrap" style="max-width: 1200px; margin: 0 auto; padding: 2rem 1rem;">
         <section class="page-header">
             <h1 class="page-title">Admin Dashboard</h1>
-            <p class="text-muted">Operational overview for TrblTours moderation and platform health.</p>
+            <p class="text-muted">Operational overview for Tribaltours moderation and platform health.</p>
         </section>
 
         <section class="stats-row guide-dashboard-stats mt-3">

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrblTours | Sign In</title>
+    <title>Tribaltours | Sign In</title>
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,17 +13,17 @@
     <link rel="stylesheet" href="{{ asset('assets/auth.css') }}">
 </head>
 <body class="auth-page">
-    <main class="auth-shell" aria-label="TrblTours authentication">
+    <main class="auth-shell" aria-label="Tribaltours authentication">
         <aside class="auth-hero" aria-hidden="true">
             <img class="auth-hero-image" src="{{ asset('images/palawan.jpg') }}" alt="">
             <div class="auth-hero-overlay"></div>
             <div class="auth-hero-inner">
-                <a href="{{ route('home') }}" class="auth-brand" aria-label="TrblTours home">TrblTours</a>
+                <a href="{{ route('home') }}" class="auth-brand" aria-label="Tribaltours home">Tribaltours</a>
                 <div class="auth-hero-copy">
                     <p class="auth-kicker">Trusted Travel Platform</p>
                     <h1>Discover curated local journeys with trusted guides.</h1>
                     <p>Sign in securely to manage bookings, likes, and messages while maintaining premium account protection standards.</p>
-                    <div class="auth-hero-stats" aria-label="TrblTours trust metrics">
+                    <div class="auth-hero-stats" aria-label="Tribaltours trust metrics">
                         <div class="auth-stat"><span>Tours</span><strong>1,240+</strong></div>
                         <div class="auth-stat"><span>Travelers</span><strong>58k</strong></div>
                         <div class="auth-stat"><span>Destinations</span><strong>96</strong></div>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $title ?? config('app.name', 'TrblTours') }}</title>
+    <title>{{ $title ?? config('app.name', 'Tribaltours') }}</title>
     <x-meta-head />
     @stack('head')
 </head>

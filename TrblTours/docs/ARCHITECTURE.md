@@ -1,4 +1,4 @@
-# TrblTours Laravel 12 Architecture
+# Tribaltours Laravel 12 Architecture
 
 ## Project Structure
 
