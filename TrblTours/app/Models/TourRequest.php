@@ -57,4 +57,9 @@ class TourRequest extends Model
     {
         return $this->hasMany(Conversation::class);
     }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(TourRequestComment::class)->orderBy('created_at')->orderBy('id');
+    }
 }

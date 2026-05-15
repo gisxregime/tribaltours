@@ -1863,6 +1863,23 @@
         const selectGuideConfirmRequest = qs('#selectGuideConfirmRequest');
         const selectGuideConfirmAmount = qs('#selectGuideConfirmAmount');
         const requestGrid = qs('.request-manage-grid');
+        let requestFilterBar = qs('[data-request-filters]');
+        if (!requestFilterBar && requestGrid && requestGrid.parentElement) {
+            requestFilterBar = document.createElement('section');
+            requestFilterBar.className = 'booking-tabs request-filter-tabs';
+            requestFilterBar.dataset.requestFilters = 'true';
+            requestFilterBar.innerHTML = [
+                '<button type="button" class="tab-btn active" data-request-filter="all">All <span class="request-filter-count" data-request-filter-count="all">0</span></button>',
+                '<button type="button" class="tab-btn" data-request-filter="open">Open <span class="request-filter-count" data-request-filter-count="open">0</span></button>',
+                '<button type="button" class="tab-btn" data-request-filter="negotiating">Negotiating <span class="request-filter-count" data-request-filter-count="negotiating">0</span></button>',
+                '<button type="button" class="tab-btn" data-request-filter="selected">Selected Guides <span class="request-filter-count" data-request-filter-count="selected">0</span></button>',
+                '<button type="button" class="tab-btn" data-request-filter="completed">Completed <span class="request-filter-count" data-request-filter-count="completed">0</span></button>'
+            ].join('');
+            requestGrid.parentElement.insertBefore(requestFilterBar, requestGrid);
+        }
+        qsa('[data-request-filter="cancelled"]', requestFilterBar || document).forEach(function (node) {
+            node.remove();
+        });
         if (requestGrid) {
             qsa('.request-manage-card:not([data-db-request="true"])', requestGrid).forEach(function (node) {
                 node.remove();
@@ -1894,11 +1911,21 @@
         };
         let pendingGallery = [];
         let dbRequestMap = {};
+        let activeRequestFilter = 'all';
+        let latestRequestRows = [];
         const statsElements = {
             total_requests: qs('[data-request-stats="total_requests"]'),
             open_requests: qs('[data-request-stats="open_requests"]'),
             selected_guides: qs('[data-request-stats="selected_guides"]'),
             completed: qs('[data-request-stats="completed"]')
+        };
+        const filterButtons = qsa('[data-request-filter]', requestFilterBar || document);
+        const filterCountElements = {
+            all: qs('[data-request-filter-count="all"]', requestFilterBar || document),
+            open: qs('[data-request-filter-count="open"]', requestFilterBar || document),
+            negotiating: qs('[data-request-filter-count="negotiating"]', requestFilterBar || document),
+            selected: qs('[data-request-filter-count="selected"]', requestFilterBar || document),
+            completed: qs('[data-request-filter-count="completed"]', requestFilterBar || document)
         };
 
         function applyRequestStats(stats) {
@@ -1922,18 +1949,125 @@
             });
         }
 
+        function deriveRequestBucketCounts(requests) {
+            const base = {
+                all: 0,
+                open: 0,
+                negotiating: 0,
+                selected: 0,
+                completed: 0
+            };
+
+            (Array.isArray(requests) ? requests : []).forEach(function (request) {
+                const bucket = requestStatusKey(request);
+                base.all += 1;
+                if (Object.prototype.hasOwnProperty.call(base, bucket)) {
+                    base[bucket] += 1;
+                }
+            });
+
+            return base;
+        }
+
+        function applyRequestFilterCounts(stats, requests) {
+            const source = stats && typeof stats === 'object' ? stats : {};
+            const derived = deriveRequestBucketCounts(requests);
+            const resolved = {
+                all: Number(source.total_requests),
+                open: Number(source.open_requests),
+                selected: Number(source.selected_guides),
+                completed: Number(source.completed),
+                negotiating: derived.negotiating
+            };
+
+            Object.keys(filterCountElements).forEach(function (key) {
+                const target = filterCountElements[key];
+                if (!target) {
+                    return;
+                }
+
+                const fallback = Number(derived[key] || 0);
+                const value = Number.isFinite(resolved[key]) ? resolved[key] : fallback;
+                target.textContent = String(Math.max(0, value));
+            });
+        }
+
+        function renderFilterEmptyState(message) {
+            if (!requestGrid) {
+                return;
+            }
+
+            let emptyNode = qs('[data-request-filter-empty]', requestGrid);
+            if (!message) {
+                if (emptyNode) {
+                    emptyNode.remove();
+                }
+                return;
+            }
+
+            if (!emptyNode) {
+                emptyNode = document.createElement('div');
+                emptyNode.className = 'empty-state';
+                emptyNode.dataset.requestFilterEmpty = 'true';
+                requestGrid.appendChild(emptyNode);
+            }
+
+            emptyNode.textContent = message;
+        }
+
+        function applyRequestFilter(bucket) {
+            activeRequestFilter = bucket || 'all';
+
+            filterButtons.forEach(function (button) {
+                const key = String(button.dataset.requestFilter || 'all');
+                button.classList.toggle('active', key === activeRequestFilter);
+            });
+
+            if (!requestGrid) {
+                return;
+            }
+
+            let visibleCount = 0;
+            qsa('.request-manage-card[data-db-request="true"]', requestGrid).forEach(function (card) {
+                const cardBucket = String(card.dataset.requestBucket || 'open');
+                const visible = activeRequestFilter === 'all' || cardBucket === activeRequestFilter;
+                card.style.display = visible ? '' : 'none';
+                if (visible) {
+                    visibleCount += 1;
+                }
+            });
+
+            const activeLabel = activeRequestFilter.charAt(0).toUpperCase() + activeRequestFilter.slice(1);
+            renderFilterEmptyState(visibleCount === 0
+                ? 'No ' + activeLabel + ' requests to show right now.'
+                : '');
+        }
+
+        filterButtons.forEach(function (button) {
+            button.addEventListener('click', function () {
+                applyRequestFilter(String(button.dataset.requestFilter || 'all'));
+            });
+        });
+
         function requestStatusKey(request) {
+            const bucketFromApi = String(request && request.statusBucket ? request.statusBucket : '').toLowerCase();
+            if (['open', 'negotiating', 'selected', 'completed', 'cancelled'].indexOf(bucketFromApi) !== -1) {
+                return bucketFromApi;
+            }
+
             const rawStatus = String(request && request.status ? request.status : '').toLowerCase();
-            const negotiationStatus = String(request && request.negotiationStatus ? request.negotiationStatus : '').toLowerCase();
             const hasSelectedGuide = !!(request && request.selectedGuideId);
 
-            if (rawStatus === 'completed' || negotiationStatus === 'completed') {
+            if (rawStatus === 'completed') {
                 return 'completed';
             }
-            if (rawStatus === 'cancelled' || negotiationStatus === 'cancelled' || (rawStatus === 'closed' && !hasSelectedGuide)) {
+            if (rawStatus === 'cancelled' || (rawStatus === 'closed' && !hasSelectedGuide)) {
                 return 'cancelled';
             }
-            if (rawStatus === 'negotiating' || rawStatus === 'closed' || negotiationStatus === 'negotiating' || negotiationStatus === 'selected' || hasSelectedGuide) {
+            if (hasSelectedGuide) {
+                return 'selected';
+            }
+            if (rawStatus === 'negotiating') {
                 return 'negotiating';
             }
             return 'open';
@@ -1946,6 +2080,9 @@
             }
             if (value === 'cancelled') {
                 return 'badge-cancelled';
+            }
+            if (value === 'selected') {
+                return 'badge-selected';
             }
             if (value === 'negotiating') {
                 return 'badge-negotiating';
@@ -1960,6 +2097,9 @@
             }
             if (value === 'cancelled') {
                 return 'Cancelled';
+            }
+            if (value === 'selected') {
+                return 'Selected Guide';
             }
             if (value === 'negotiating') {
                 return 'Negotiating';
@@ -1985,14 +2125,79 @@
             });
         }
 
+        function canSelectGuideFromRequest(request) {
+            const key = requestStatusKey(request);
+            return key === 'open' || key === 'selected';
+        }
+
+        function renderCommentNode(request, comment, depth) {
+            const item = comment && typeof comment === 'object' ? comment : {};
+            const authorRole = String(item.authorRole || '').toLowerCase() || 'guide';
+            const authorId = String(item.authorId || item.guideId || '').trim();
+            const selectedGuideId = String(request && request.selectedGuideId ? request.selectedGuideId : '').trim();
+            const isGuide = authorRole === 'guide';
+            const isSelectedGuide = isGuide && selectedGuideId !== '' && selectedGuideId === authorId;
+            const offerAmount = item.offerAmount ? Number(item.offerAmount) : null;
+            const canSelect = isGuide && canSelectGuideFromRequest(request);
+            const replies = Array.isArray(item.replies) ? item.replies : [];
+
+            const selectButton = canSelect
+                ? '<button type="button" class="btn-gold btn-xs" data-select-comment-guide="' + escapeHtml(authorId) + '" data-comment-id="' + escapeHtml(String(item.id || '')) + '" data-guide-name="' + escapeHtml(String(item.authorName || item.guideName || 'Guide')) + '" data-offer-amount="' + escapeHtml(String(offerAmount || '')) + '"' + (isSelectedGuide ? ' disabled' : '') + '><i class="fa-solid fa-user-check me-1"></i>' + (isSelectedGuide ? 'Selected' : 'Select Guide') + '</button>'
+                : '';
+
+            const openMessageButton = isGuide && authorId
+                ? '<button type="button" class="btn-soft btn-xs" data-open-comment-message="' + escapeHtml(authorId) + '" data-comment-id="' + escapeHtml(String(item.id || '')) + '"><i class="fa-regular fa-comments me-1"></i>Open Message</button>'
+                : '';
+
+            const replyButton = '<button type="button" class="btn-ghost btn-xs" data-toggle-reply-form="' + escapeHtml(String(item.id || '')) + '"><i class="fa-solid fa-reply me-1"></i>Reply</button>';
+            const amountLine = offerAmount
+                ? '<div class="offer-meta-line">Offer: <strong>' + escapeHtml(formatPeso(offerAmount)) + '</strong></div>'
+                : '';
+            const repliesMarkup = replies.length
+                ? '<div class="thread-replies">' + replies.map(function (reply) {
+                    return renderCommentNode(request, reply, depth + 1);
+                }).join('') + '</div>'
+                : '';
+
+            return [
+                '<article class="thread-comment" data-comment-id="', escapeHtml(String(item.id || '')), '" data-comment-depth="', String(depth), '">',
+                '<div class="thread-comment-head">',
+                '<img class="thread-avatar" src="', escapeHtml(item.authorAvatar || item.guideAvatar || '/images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';" alt="', escapeHtml(item.authorName || item.guideName || 'User'), '">',
+                '<div class="thread-meta">',
+                '<div class="thread-name-row"><strong>', escapeHtml(item.authorName || item.guideName || 'User'), '</strong><span class="thread-role-pill">', escapeHtml(authorRole === 'tourist' ? 'Tourist' : 'Guide'), '</span></div>',
+                '<small class="text-muted">', escapeHtml(formatCommentTimestamp(item.createdAt)), '</small>',
+                '</div>',
+                '</div>',
+                '<p class="small mb-1">', escapeHtml(item.text || ''), '</p>',
+                amountLine,
+                '<div class="thread-actions">',
+                selectButton,
+                openMessageButton,
+                replyButton,
+                '</div>',
+                '<form class="thread-reply-form" data-comment-reply-form="', escapeHtml(String(item.id || '')), '" data-request-id="', escapeHtml(String(request && request.id ? request.id : '')), '">',
+                '<textarea class="input-soft" rows="2" data-reply-text placeholder="Write a reply..." required></textarea>',
+                '<div class="d-flex justify-content-end gap-2 mt-2">',
+                '<button type="button" class="btn-ghost btn-xs" data-cancel-reply="', escapeHtml(String(item.id || '')), '">Cancel</button>',
+                '<button type="submit" class="btn-charcoal btn-xs">Reply</button>',
+                '</div>',
+                '</form>',
+                repliesMarkup,
+                '</article>'
+            ].join('');
+        }
+
         function renderRequestComments(request) {
             const list = Array.isArray(request && request.comments) ? request.comments : [];
             const selectedGuideId = request && request.selectedGuideId ? String(request.selectedGuideId) : '';
-
             const statusKey = requestStatusKey(request);
             const statusClass = statusKey === 'completed'
                 ? 'completed'
-                : (statusKey === 'cancelled' ? 'cancelled' : (statusKey === 'negotiating' ? 'negotiating' : ''));
+                : (statusKey === 'cancelled'
+                    ? 'cancelled'
+                    : (statusKey === 'selected'
+                        ? 'selected'
+                        : (statusKey === 'negotiating' ? 'negotiating' : '')));
 
             const statusMarkup = [
                 '<div class="negotiation-status-row">',
@@ -2007,55 +2212,31 @@
                 ? '<div class="selected-guide-callout"><i class="fa-solid fa-user-check me-1"></i>Selected guide: ' + escapeHtml(String(request.selectedGuideName || 'Guide')) + '<button type="button" class="btn btn-sm btn-light ms-2" data-unselect-db-guide="' + escapeHtml(String(request.id || '')) + '">Unselect Guide</button></div>'
                 : '';
 
-            if (!list.length) {
-                return statusMarkup + selectedGuideMarkup + '<p class="small text-muted mb-2">No guide offers yet. Waiting for guide proposals.</p>';
-            }
+            const commentMarkup = list.length
+                ? list.map(function (comment) {
+                    return renderCommentNode(request, comment, 0);
+                }).join('')
+                : '<p class="small text-muted mb-2">No comments yet. Start the discussion below.</p>';
 
-            const offers = list.map(function (item) {
-                const normalizedGuideId = item && item.guideId ? String(item.guideId) : '';
-                const isGuideOffer = normalizedGuideId !== '';
-                const amountLine = item.offerAmount
-                    ? '<div class="offer-meta-line">Proposed price: <strong>' + escapeHtml(formatPeso(item.offerAmount)) + '</strong></div>'
-                    : '<div class="offer-meta-line">Proposed price: <strong>Not specified</strong></div>';
-                const timeLine = '<div class="offer-meta-line">Offer time: ' + escapeHtml(formatCommentTimestamp(item.createdAt)) + '</div>';
-                const selectButton = item.guideId
-                    ? '<div class="mt-2"><button type="button" class="btn-gold" data-select-db-guide="' + escapeHtml(String(item.guideId)) + '" data-offer-amount="' + escapeHtml(String(item.offerAmount || '')) + '"' + (selectedGuideId ? ' disabled' : '') + '><i class="fa-solid fa-user-check me-1"></i>' + (selectedGuideId && selectedGuideId === String(item.guideId) ? 'Selected' : 'Select Guide') + '</button></div>'
-                    : '';
-                const openMessageButton = item.guideId
-                    ? '<div class="mt-2"><button type="button" class="btn-soft" data-open-comment-conversation="' + escapeHtml(String(item.guideId)) + '" data-request-id="' + escapeHtml(String(request.id || '')) + '"><i class="fa-regular fa-comments me-1"></i>Open Message</button></div>'
-                    : '';
-
-                return [
-                    '<div class="offer-item">',
-                    '<div class="offer-guide-row">',
-                    '<img class="offer-guide-avatar" src="', escapeHtml(item.guideAvatar || '/images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';" alt="', escapeHtml(item.guideName || 'Guide'), '">',
-                    '<div><strong>', escapeHtml(item.guideName || 'Guide'), '</strong><div class="offer-meta-line">', (isGuideOffer ? 'Guide offer' : 'Tourist message'), '</div></div>',
-                    '</div>',
-                    '<div class="small">', escapeHtml(item.text || ''), '</div>',
-                    isGuideOffer ? amountLine : '',
-                    timeLine,
-                    openMessageButton,
-                    selectButton,
-                    '</div>'
-                ].join('');
-            }).join('');
-
-            return statusMarkup + selectedGuideMarkup + offers;
+            return statusMarkup + selectedGuideMarkup + '<div class="thread-list">' + commentMarkup + '</div>';
         }
 
-        function submitRequestComment(requestId, text) {
-            return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)) + '/comment', {
+        function submitRequestComment(requestId, text, parentCommentId) {
+            return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)) + '/comments', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': getCsrfToken()
                 },
-                body: JSON.stringify({ text: text })
+                body: JSON.stringify({
+                    text: text,
+                    parent_comment_id: parentCommentId || null
+                })
             });
         }
 
-        function submitGuideSelection(requestId, guideId, offerAmount) {
+        function submitGuideSelection(requestId, guideId, offerAmount, commentId) {
             return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)) + '/select-guide', {
                 method: 'POST',
                 headers: {
@@ -2065,7 +2246,23 @@
                 },
                 body: JSON.stringify({
                     guide_id: guideId,
+                    comment_id: commentId || null,
                     offer_amount: offerAmount || null
+                })
+            });
+        }
+
+        function startGuideMessage(requestId, guideId) {
+            return apiRequest('/tourist/messages/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    tour_request_id: requestId || null,
+                    guide_id: guideId
                 })
             });
         }
@@ -2077,21 +2274,6 @@
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': getCsrfToken()
                 }
-            });
-        }
-
-        function openGuideConversation(requestId, guideId) {
-            return apiRequest('/tourist/messages/start', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    tour_request_id: requestId,
-                    guide_id: guideId
-                })
             });
         }
 
@@ -2107,7 +2289,7 @@
             });
         }
 
-        function cancelRequest(requestId) {
+        function deleteRequest(requestId) {
             return apiRequest('/tourist/requests/' + encodeURIComponent(String(requestId)), {
                 method: 'DELETE',
                 headers: {
@@ -2122,19 +2304,22 @@
                 return;
             }
 
+            latestRequestRows = Array.isArray(requests) ? requests.slice() : [];
             dbRequestMap = {};
 
-            qsa('.request-manage-card', requestGrid).forEach(function (node) {
+            qsa('.request-manage-card, [data-request-filter-empty]', requestGrid).forEach(function (node) {
                 node.remove();
             });
 
-            (Array.isArray(requests) ? requests : []).forEach(function (request) {
+            latestRequestRows.forEach(function (request) {
                 const id = String(request.id || '');
+                const bucket = requestStatusKey(request);
                 dbRequestMap[id] = request;
                 const card = document.createElement('article');
                 card.className = 'request-manage-card';
                 card.dataset.dbRequest = 'true';
                 card.dataset.requestId = id;
+                card.dataset.requestBucket = bucket;
                 card.innerHTML = [
                     '<div class="request-top">',
                     '<div class="post-identity">',
@@ -2162,30 +2347,30 @@
                     '</div>',
                     '<div class="negotiation-box">',
                     renderRequestComments(request),
-                    '<form data-db-reply-form="', escapeHtml(id), '">',
-                    '<label class="field-label">Reply</label>',
-                    '<textarea class="input-soft" rows="2" placeholder="Send a message to guides..."></textarea>',
+                    '<form data-db-comment-form="', escapeHtml(id), '">',
+                    '<label class="field-label">Add Comment</label>',
+                    '<textarea class="input-soft" rows="2" data-comment-text placeholder="Write a comment for this request..." required></textarea>',
                     '<div class="d-flex gap-2 mt-2">',
-                    '<button type="submit" class="btn-charcoal">Reply</button>',
+                    '<button type="submit" class="btn-charcoal">Post Comment</button>',
                     '</div>',
                     '</form>',
                     '</div>',
                     '<div class="d-flex gap-2 mt-3 flex-wrap">',
-                    '<button class="btn-ghost" data-toggle-thread><i class="fa-regular fa-comments me-1"></i>View Negotiation</button>',
-                    ((String(request.status || '').toLowerCase() !== 'completed' && String(request.status || '').toLowerCase() !== 'cancelled')
-                        ? '<button class="btn-danger" data-cancel-request><i class="fa-solid fa-ban me-1"></i>Mark Cancelled</button>'
+                    '<button class="btn-ghost" data-toggle-thread><i class="fa-regular fa-comments me-1"></i>View Comments</button>',
+                    (String(request.status || '').toLowerCase() !== 'completed'
+                        ? '<button class="btn-danger" data-delete-request><i class="fa-solid fa-trash me-1"></i>Delete Request</button>'
                         : ''),
                     ((String(request.status || '').toLowerCase() !== 'completed' && String(request.status || '').toLowerCase() !== 'cancelled')
                         ? '<button class="btn-gold" data-complete-request><i class="fa-solid fa-check me-1"></i>Mark Complete</button>'
                         : ''),
-                    ((request.selectedGuideId && request.conversationId)
-                        ? '<button class="btn-soft" data-open-conversation data-conversation-id="' + escapeHtml(String(request.conversationId || '')) + '"><i class="fa-regular fa-comments me-1"></i>Open Messages</button>'
-                        : ''),
                     '</div>',
                     '</div>'
                 ].join('');
-                requestGrid.prepend(card);
+                requestGrid.appendChild(card);
             });
+
+            applyRequestFilterCounts(null, latestRequestRows);
+            applyRequestFilter(activeRequestFilter);
         }
 
         function setNegotiationOpenState(requestId, open) {
@@ -2206,8 +2391,8 @@
 
             box.classList.toggle('open', Boolean(open));
             btn.innerHTML = Boolean(open)
-                ? '<i class="fa-regular fa-comments me-1"></i>Hide Negotiation'
-                : '<i class="fa-regular fa-comments me-1"></i>View Negotiation';
+                ? '<i class="fa-regular fa-comments me-1"></i>Hide Comments'
+                : '<i class="fa-regular fa-comments me-1"></i>View Comments';
         }
 
         function focusRequestCard(requestId) {
@@ -2241,8 +2426,11 @@
 
         function syncMyRequestsFromApi() {
             return apiRequest('/tourist/requests/mine').then(function (data) {
-                renderStoredRequests(data && Array.isArray(data.requests) ? data.requests : []);
-                applyRequestStats(data && data.stats ? data.stats : null);
+                const requestRows = data && Array.isArray(data.requests) ? data.requests : [];
+                const stats = data && data.stats ? data.stats : null;
+                renderStoredRequests(requestRows);
+                applyRequestStats(stats);
+                applyRequestFilterCounts(stats, requestRows);
                 if (requestFromRoute) {
                     focusRequestCard(requestFromRoute);
                 }
@@ -2252,6 +2440,7 @@
                 }
             }).catch(function () {
                 applyRequestStats(null);
+                applyRequestFilterCounts(null, latestRequestRows);
                 return null;
             });
         }
@@ -2264,23 +2453,52 @@
 
         if (requestGrid) {
             requestGrid.addEventListener('submit', function (event) {
-                const form = event.target.closest('[data-db-reply-form]');
-                if (!form) {
+                const topLevelForm = event.target.closest('[data-db-comment-form]');
+                const replyForm = event.target.closest('[data-comment-reply-form]');
+                if (!topLevelForm && !replyForm) {
                     return;
                 }
+
                 event.preventDefault();
-                const requestId = String(form.dataset.dbReplyForm || '');
-                const textarea = qs('textarea', form);
-                const text = String(textarea ? textarea.value : '').trim();
-                if (!requestId || !text) {
+
+                if (topLevelForm) {
+                    const requestId = String(topLevelForm.dataset.dbCommentForm || '');
+                    const textarea = qs('[data-comment-text]', topLevelForm);
+                    const text = String(textarea ? textarea.value : '').trim();
+                    if (!requestId || !text) {
+                        return;
+                    }
+
+                    submitRequestComment(requestId, text, null).then(function () {
+                        if (textarea) {
+                            textarea.value = '';
+                        }
+                        showToast('Comment posted.', 'success');
+                        syncMyRequestsFromApi().then(function () {
+                            setNegotiationOpenState(requestId, true);
+                        });
+                    }).catch(function () {
+                        showToast('Unable to post comment right now.', 'danger');
+                    });
                     return;
                 }
-                submitRequestComment(requestId, text).then(function () {
+
+                const requestId = String(replyForm.dataset.requestId || '');
+                const parentCommentId = String(replyForm.dataset.commentReplyForm || '');
+                const textarea = qs('[data-reply-text]', replyForm);
+                const text = String(textarea ? textarea.value : '').trim();
+                if (!requestId || !parentCommentId || !text) {
+                    return;
+                }
+
+                submitRequestComment(requestId, text, parentCommentId).then(function () {
                     if (textarea) {
                         textarea.value = '';
                     }
-                    showToast('Reply posted in thread.', 'success');
-                    syncMyRequestsFromApi();
+                    showToast('Reply posted.', 'success');
+                    syncMyRequestsFromApi().then(function () {
+                        setNegotiationOpenState(requestId, true);
+                    });
                 }).catch(function () {
                     showToast('Unable to post reply right now.', 'danger');
                 });
@@ -2321,11 +2539,77 @@
                     return;
                 }
 
-                const selectBtn = event.target.closest('[data-select-db-guide]');
+                const replyToggleBtn = event.target.closest('[data-toggle-reply-form]');
+                if (replyToggleBtn) {
+                    const commentId = String(replyToggleBtn.dataset.toggleReplyForm || '').trim();
+                    if (!commentId) {
+                        return;
+                    }
+
+                    const card = replyToggleBtn.closest('[data-request-id]');
+                    const requestId = card ? String(card.dataset.requestId || '') : '';
+                    const form = qs('[data-comment-reply-form="' + commentId + '"]', card || requestGrid);
+                    if (!form) {
+                        return;
+                    }
+
+                    qsa('.thread-reply-form.open', card || requestGrid).forEach(function (node) {
+                        if (node !== form) {
+                            node.classList.remove('open');
+                        }
+                    });
+
+                    form.classList.toggle('open');
+                    if (form.classList.contains('open')) {
+                        const field = qs('[data-reply-text]', form);
+                        if (field) {
+                            field.focus();
+                        }
+                        if (requestId) {
+                            setNegotiationOpenState(requestId, true);
+                        }
+                    }
+                    return;
+                }
+
+                const cancelReplyBtn = event.target.closest('[data-cancel-reply]');
+                if (cancelReplyBtn) {
+                    const commentId = String(cancelReplyBtn.dataset.cancelReply || '').trim();
+                    const form = qs('[data-comment-reply-form="' + commentId + '"]', requestGrid);
+                    if (form) {
+                        form.classList.remove('open');
+                    }
+                    return;
+                }
+
+                const openMessageBtn = event.target.closest('[data-open-comment-message]');
+                if (openMessageBtn) {
+                    const guideId = String(openMessageBtn.dataset.openCommentMessage || '').trim();
+                    const card = openMessageBtn.closest('[data-request-id]');
+                    const requestId = card ? String(card.dataset.requestId || '') : '';
+                    if (!guideId) {
+                        showToast('Unable to identify the guide for this comment.', 'warning');
+                        return;
+                    }
+
+                    startGuideMessage(requestId || null, guideId).then(function (result) {
+                        const conversationId = result && result.conversationId ? String(result.conversationId) : '';
+                        const redirect = result && result.redirect
+                            ? String(result.redirect)
+                            : '/messages' + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
+                        window.location.href = redirect;
+                    }).catch(function (error) {
+                        showToast(error && error.message ? error.message : 'Unable to open private chat right now.', 'danger');
+                    });
+                    return;
+                }
+
+                const selectBtn = event.target.closest('[data-select-comment-guide]');
                 if (selectBtn) {
                     const card = selectBtn.closest('[data-request-id]');
                     const requestId = card ? String(card.dataset.requestId || '') : '';
-                    const guideId = String(selectBtn.dataset.selectDbGuide || '');
+                    const guideId = String(selectBtn.dataset.selectCommentGuide || '');
+                    const commentId = String(selectBtn.dataset.commentId || '');
                     const offerAmount = selectBtn.dataset.offerAmount ? Number(selectBtn.dataset.offerAmount) : null;
                     if (!requestId || !guideId) {
                         return;
@@ -2335,9 +2619,8 @@
                     pendingGuideSelection = {
                         requestId: requestId,
                         guideId: guideId,
-                        guideName: selectBtn.closest('.offer-item')
-                            ? String((qs('strong', selectBtn.closest('.offer-item')) || {}).textContent || '').trim()
-                            : 'Guide',
+                        commentId: commentId || null,
+                        guideName: String(selectBtn.dataset.guideName || 'Guide').trim() || 'Guide',
                         offerAmount: offerAmount,
                         requestTitle: String(requestData.title || 'this request')
                     };
@@ -2357,40 +2640,6 @@
                     if (selectGuideModalInstance) {
                         selectGuideModalInstance.show();
                     }
-                    return;
-                }
-
-                const openConversationBtn = event.target.closest('[data-open-conversation]');
-                if (openConversationBtn) {
-                    const conversationId = String(openConversationBtn.dataset.conversationId || '').trim();
-                    if (!conversationId) {
-                        showToast('Private chat is being prepared. Please refresh and try again.', 'warning');
-                        return;
-                    }
-
-                    window.location.href = '/messages?conversation=' + encodeURIComponent(conversationId);
-                    return;
-                }
-
-                const openCommentConversationBtn = event.target.closest('[data-open-comment-conversation]');
-                if (openCommentConversationBtn) {
-                    const guideId = String(openCommentConversationBtn.dataset.openCommentConversation || '').trim();
-                    const requestId = String(openCommentConversationBtn.dataset.requestId || '').trim();
-                    if (!guideId || !requestId) {
-                        showToast('Unable to open conversation right now.', 'danger');
-                        return;
-                    }
-
-                    openGuideConversation(requestId, guideId).then(function (result) {
-                        const conversationId = result && result.conversationId ? String(result.conversationId) : '';
-                        if (!conversationId) {
-                            showToast('Unable to open conversation right now.', 'danger');
-                            return;
-                        }
-                        window.location.href = '/messages?conversation=' + encodeURIComponent(conversationId);
-                    }).catch(function (error) {
-                        showToast(error && error.message ? error.message : 'Unable to open conversation right now.', 'danger');
-                    });
                     return;
                 }
 
@@ -2426,18 +2675,19 @@
                     return;
                 }
 
-                const cancelBtn = event.target.closest('[data-cancel-request]');
-                if (cancelBtn) {
-                    const card = cancelBtn.closest('[data-request-id]');
+                const deleteBtn = event.target.closest('[data-delete-request]');
+                if (deleteBtn) {
+                    const card = deleteBtn.closest('[data-request-id]');
                     const requestId = card ? String(card.dataset.requestId || '') : '';
                     if (!requestId || !card || card.dataset.dbRequest !== 'true') {
                         return;
                     }
-                    updateRequestStatus(requestId, 'closed').then(function () {
-                        showToast('Request marked cancelled.', 'warning');
+
+                    deleteRequest(requestId).then(function () {
+                        showToast('Request deleted.', 'warning');
                         syncMyRequestsFromApi();
                     }).catch(function (error) {
-                        showToast(error && error.message ? error.message : 'Unable to mark request cancelled.', 'danger');
+                        showToast(error && error.message ? error.message : 'Unable to delete request.', 'danger');
                     });
                 }
             });
@@ -2451,7 +2701,7 @@
 
                 const selection = pendingGuideSelection;
                 setButtonLoading(confirmSelectGuideBtn, true);
-                submitGuideSelection(selection.requestId, selection.guideId, selection.offerAmount).then(function (result) {
+                submitGuideSelection(selection.requestId, selection.guideId, selection.offerAmount, selection.commentId).then(function (result) {
                     showToast('Guide selected. Booking and private chat created.', 'success');
                     if (selectGuideModalInstance) {
                         selectGuideModalInstance.hide();
@@ -2617,7 +2867,7 @@
                 toggleBtn.addEventListener('click', function () {
                     const box = qs('.negotiation-box', card);
                     box.classList.toggle('open');
-                    toggleBtn.textContent = box.classList.contains('open') ? 'Hide Negotiation' : 'View Negotiation';
+                    toggleBtn.textContent = box.classList.contains('open') ? 'Hide Comments' : 'View Comments';
                 });
             }
 

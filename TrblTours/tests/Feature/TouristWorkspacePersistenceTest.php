@@ -117,7 +117,7 @@ class TouristWorkspacePersistenceTest extends TestCase
             ->assertOk()
             ->assertJsonPath('ok', true);
 
-        $this->assertSoftDeleted('tour_requests', [
+        $this->assertDatabaseMissing('tour_requests', [
             'id' => $tourRequest->id,
         ]);
     }
@@ -189,28 +189,46 @@ class TouristWorkspacePersistenceTest extends TestCase
             'status' => 'closed',
         ]);
 
-        Booking::query()->create([
-            'booking_reference' => 'TRBL-COMPLETE-1',
+        TourRequest::query()->create([
             'tourist_id' => $tourist->id,
-            'guide_id' => $guide->id,
-            'tour_listing_id' => null,
-            'guest_count' => 2,
-            'price_snapshot' => 1000,
-            'total_amount' => 2000,
-            'payment_status' => 'paid',
+            'selected_guide_id' => $guide->id,
+            'title' => 'Completed Request',
+            'description' => 'Request fully completed.',
             'status' => 'completed',
-            'reservation_type' => 'manual',
-            'completed_at' => now(),
+        ]);
+
+        TourRequest::query()->create([
+            'tourist_id' => $tourist->id,
+            'selected_guide_id' => $guide->id,
+            'title' => 'Cancelled Request',
+            'description' => 'Request cancelled after planning.',
+            'status' => 'cancelled',
         ]);
 
         $this->actingAs($tourist)
             ->getJson('/tourist/requests/mine')
             ->assertOk()
             ->assertJsonPath('ok', true)
-            ->assertJsonPath('stats.total_requests', 2)
+            ->assertJsonPath('stats.total_requests', 4)
             ->assertJsonPath('stats.open_requests', 1)
             ->assertJsonPath('stats.selected_guides', 1)
-            ->assertJsonPath('stats.completed', 1);
+            ->assertJsonPath('stats.completed', 1)
+            ->assertJsonFragment([
+                'title' => 'Cancelled Request',
+                'statusBucket' => 'cancelled',
+            ])
+            ->assertJsonFragment([
+                'title' => 'Completed Request',
+                'statusBucket' => 'completed',
+            ])
+            ->assertJsonFragment([
+                'title' => 'Closed Request',
+                'statusBucket' => 'selected',
+            ])
+            ->assertJsonFragment([
+                'title' => 'Open Request',
+                'statusBucket' => 'open',
+            ]);
     }
 
     public function test_tourist_booking_store_is_persistent_and_deduplicated_by_client_token(): void

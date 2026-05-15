@@ -30,6 +30,8 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('
     Route::post('messages/threads/{conversation}', [MessageController::class, 'sendToThread'])->name('messages.thread.send');
     Route::post('messages/start', [MessageController::class, 'start'])->name('messages.start');
 
+    Route::get('requests/{tourRequest}/comments', [TourRequestController::class, 'comments'])->name('requests.comments');
+    Route::post('requests/{tourRequest}/comments', [TourRequestController::class, 'addComment'])->name('requests.comments.store');
     Route::post('requests/{tourRequest}/comment', [TourRequestController::class, 'addComment'])->name('requests.comment');
     Route::post('requests/{tourRequest}/select-guide', [TourRequestController::class, 'selectGuide'])->name('requests.select-guide');
     Route::post('requests/{tourRequest}/unselect-guide', [TourRequestController::class, 'unselectGuide'])->name('requests.unselect-guide');

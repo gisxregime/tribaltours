@@ -1191,22 +1191,33 @@
         const guideProfile = getGuideProfile();
         const activeGuideName = String(guideProfile && guideProfile.name ? guideProfile.name : 'Tour Guide').trim() || 'Tour Guide';
         let realtimeSubscribed = false;
+        let requestFeedPollingId = null;
 
         function isFeedVisibleStatus(status) {
             const normalized = String(status || '').trim().toLowerCase();
-            return normalized === 'open' || normalized === 'negotiating';
+            return normalized === 'open' || normalized === 'negotiating' || normalized === 'selected' || normalized === 'closed';
         }
 
         function statusBadgeClass(status) {
-            return String(status || '').trim().toLowerCase() === 'negotiating'
-                ? 'badge-negotiating'
-                : 'badge-open';
+            const normalized = String(status || '').trim().toLowerCase();
+            if (normalized === 'negotiating') {
+                return 'badge-negotiating';
+            }
+            if (normalized === 'selected' || normalized === 'closed') {
+                return 'badge-selected';
+            }
+            return 'badge-open';
         }
 
         function statusBadgeLabel(status) {
-            return String(status || '').trim().toLowerCase() === 'negotiating'
-                ? 'Negotiating'
-                : 'Open';
+            const normalized = String(status || '').trim().toLowerCase();
+            if (normalized === 'negotiating') {
+                return 'Negotiating';
+            }
+            if (normalized === 'selected' || normalized === 'closed') {
+                return 'Selected Guide';
+            }
+            return 'Open';
         }
 
         function upsertIncomingRequest(request) {
@@ -1316,43 +1327,94 @@
             });
         }
 
+        function initRequestFeedPolling() {
+            if (requestFeedPollingId !== null) {
+                return;
+            }
+
+            requestFeedPollingId = window.setInterval(function () {
+                if (document.visibilityState && document.visibilityState !== 'visible') {
+                    return;
+                }
+                syncRequestsFromApi();
+            }, 15000);
+        }
+
         function normalizeComments(comments) {
             if (!Array.isArray(comments)) {
                 return [];
             }
             return comments.map(function (entry) {
+                const item = entry && typeof entry === 'object' ? entry : {};
                 return {
-                    id: String(entry && entry.id ? entry.id : uid('guide-comment')),
-                    guideName: String(entry && entry.guideName ? entry.guideName : activeGuideName).trim() || activeGuideName,
-                    text: String(entry && entry.text ? entry.text : '').trim(),
-                    createdAt: String(entry && entry.createdAt ? entry.createdAt : nowISO())
+                    id: String(item.id || uid('guide-comment')),
+                    parentCommentId: item.parentCommentId ? String(item.parentCommentId) : null,
+                    authorId: item.authorId ? String(item.authorId) : '',
+                    authorRole: String(item.authorRole || '').toLowerCase() || 'guide',
+                    authorName: String(item.authorName || item.guideName || activeGuideName).trim() || activeGuideName,
+                    authorAvatar: String(item.authorAvatar || item.guideAvatar || '/images/manila.jpg'),
+                    text: String(item.text || '').trim(),
+                    offerAmount: item.offerAmount !== null && item.offerAmount !== undefined ? Number(item.offerAmount) : null,
+                    createdAt: String(item.createdAt || nowISO()),
+                    replies: normalizeComments(Array.isArray(item.replies) ? item.replies : [])
                 };
             }).filter(function (entry) {
                 return entry.text;
             });
         }
 
-        function commentMarkup(requestId, comments) {
-            const safeComments = normalizeComments(comments);
+        function renderCommentNode(request, entry, depth) {
+            const isTouristAuthor = String(entry.authorRole || '').toLowerCase() === 'tourist';
+            const replies = Array.isArray(entry.replies) ? entry.replies : [];
+            const offerAmount = entry.offerAmount;
+            const openMessageButton = isTouristAuthor && request && request.touristId
+                ? '<button type="button" class="btn-soft btn-xs" data-open-comment-message="' + escapeHtml(String(request.touristId)) + '" data-request-id="' + escapeHtml(String(request.id || '')) + '"><i class="fa-regular fa-comments me-1"></i>Open Message</button>'
+                : '';
+
+            return [
+                '<article class="thread-comment" data-comment-id="', escapeHtml(String(entry.id || '')), '" data-comment-depth="', String(depth), '">',
+                '<div class="thread-comment-head">',
+                '<img class="thread-avatar" src="', escapeHtml(entry.authorAvatar || '/images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';" alt="', escapeHtml(entry.authorName || 'User'), '">',
+                '<div class="thread-meta">',
+                '<div class="thread-name-row"><strong>', escapeHtml(entry.authorName || 'User'), '</strong><span class="thread-role-pill">', escapeHtml(isTouristAuthor ? 'Tourist' : 'Guide'), '</span></div>',
+                '<small class="text-muted">', escapeHtml(relativeTime(entry.createdAt)), '</small>',
+                '</div>',
+                '</div>',
+                '<p class="small mb-1">', escapeHtml(entry.text || ''), '</p>',
+                offerAmount ? '<div class="offer-meta-line">Offer: <strong>' + escapeHtml(formatPeso(offerAmount)) + '</strong></div>' : '',
+                '<div class="thread-actions">',
+                openMessageButton,
+                '<button type="button" class="btn-ghost btn-xs" data-toggle-reply-form="', escapeHtml(String(entry.id || '')), '"><i class="fa-solid fa-reply me-1"></i>Reply</button>',
+                '</div>',
+                '<form class="thread-reply-form" data-request-comment-form="', escapeHtml(String(request && request.id ? request.id : '')), '" data-parent-comment-id="', escapeHtml(String(entry.id || '')), '">',
+                '<textarea class="input-soft" rows="2" data-comment-text placeholder="Write your reply..." required></textarea>',
+                '<div class="d-flex justify-content-end gap-2 mt-2">',
+                '<button type="button" class="btn-ghost btn-xs" data-cancel-reply="', escapeHtml(String(entry.id || '')), '">Cancel</button>',
+                '<button class="btn-charcoal btn-xs" type="submit">Reply</button>',
+                '</div>',
+                '</form>',
+                replies.length
+                    ? '<div class="thread-replies">' + replies.map(function (reply) {
+                        return renderCommentNode(request, reply, depth + 1);
+                    }).join('') + '</div>'
+                    : '',
+                '</article>'
+            ].join('');
+        }
+
+        function commentMarkup(request) {
+            const safeComments = normalizeComments(Array.isArray(request && request.comments) ? request.comments : []);
             const rendered = safeComments.length
                 ? safeComments.map(function (entry) {
-                    return [
-                        '<article class="surface p-2 mb-2">',
-                        '<div class="d-flex justify-content-between align-items-start gap-2">',
-                        '<p class="mb-1 small"><strong>', escapeHtml(entry.guideName), '</strong></p>',
-                        '<small class="text-muted">', escapeHtml(relativeTime(entry.createdAt)), '</small>',
-                        '</div>',
-                        '<p class="small mb-0 text-muted">', escapeHtml(entry.text), '</p>',
-                        '</article>'
-                    ].join('');
+                    return renderCommentNode(request, entry, 0);
                 }).join('')
                 : '<p class="small text-muted mb-2">No comments yet. Be the first guide to comment.</p>';
 
             return [
                 '<div class="mt-3 pt-2 border-top">',
-                '<h3 class="h6 mb-2">Guide Comments</h3>',
-                '<div class="mb-2">', rendered, '</div>',
-                '<form data-request-comment-form="', escapeHtml(requestId), '">',
+                '<h3 class="h6 mb-2">Request Comments</h3>',
+                '<div class="thread-list mb-2">', rendered, '</div>',
+                '<form data-request-comment-form="', escapeHtml(String(request && request.id ? request.id : '')), '">',
                 '<textarea class="input-soft" rows="2" data-comment-text placeholder="Write your comment for this request..." required></textarea>',
                 '<div class="d-flex justify-content-end mt-2">',
                 '<button class="btn-charcoal" type="submit"><i class="fa-regular fa-paper-plane me-1"></i>Post Comment</button>',
@@ -1360,6 +1422,21 @@
                 '</form>',
                 '</div>'
             ].join('');
+        }
+
+        function startConversationWithTourist(requestId, touristId) {
+            return apiRequest('/guide/messages/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    tour_request_id: requestId || null,
+                    tourist_id: touristId
+                })
+            });
         }
 
         function render() {
@@ -1409,7 +1486,7 @@
                         return '<span class="soft-tag">' + escapeHtml(tag) + '</span>';
                     }).join(''),
                     '</div>',
-                    commentMarkup(item.id, item.comments),
+                    commentMarkup(item),
                     '</div>'
                 ].join('');
                 host.appendChild(card);
@@ -1423,13 +1500,14 @@
             }
             event.preventDefault();
             const requestId = form.dataset.requestCommentForm;
+            const parentCommentId = form.dataset.parentCommentId ? String(form.dataset.parentCommentId) : null;
             const textarea = qs('[data-comment-text]', form);
             const message = String(textarea ? textarea.value : '').trim();
             if (!message) {
                 return;
             }
 
-            apiRequest('/guide/request-feed/' + encodeURIComponent(String(requestId)) + '/comment', {
+            apiRequest('/guide/request-feed/' + encodeURIComponent(String(requestId)) + '/comments', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1437,7 +1515,8 @@
                     'X-CSRF-TOKEN': getCsrfToken()
                 },
                 body: JSON.stringify({
-                    text: message
+                    text: message,
+                    parent_comment_id: parentCommentId
                 })
             }).then(function (data) {
                 const updatedRequest = data && data.request ? data.request : null;
@@ -1457,6 +1536,67 @@
             });
         });
 
+        host.addEventListener('click', function (event) {
+            const toggleReplyBtn = event.target.closest('[data-toggle-reply-form]');
+            if (toggleReplyBtn) {
+                const commentId = String(toggleReplyBtn.dataset.toggleReplyForm || '').trim();
+                if (!commentId) {
+                    return;
+                }
+
+                const card = toggleReplyBtn.closest('.request-manage-card');
+                const form = qs('[data-parent-comment-id="' + commentId + '"]', card || host);
+                if (!form) {
+                    return;
+                }
+
+                qsa('.thread-reply-form.open', card || host).forEach(function (node) {
+                    if (node !== form) {
+                        node.classList.remove('open');
+                    }
+                });
+
+                form.classList.toggle('open');
+                if (form.classList.contains('open')) {
+                    const input = qs('[data-comment-text]', form);
+                    if (input) {
+                        input.focus();
+                    }
+                }
+                return;
+            }
+
+            const cancelReplyBtn = event.target.closest('[data-cancel-reply]');
+            if (cancelReplyBtn) {
+                const commentId = String(cancelReplyBtn.dataset.cancelReply || '').trim();
+                const card = cancelReplyBtn.closest('.request-manage-card');
+                const form = qs('[data-parent-comment-id="' + commentId + '"]', card || host);
+                if (form) {
+                    form.classList.remove('open');
+                }
+                return;
+            }
+
+            const openMessageBtn = event.target.closest('[data-open-comment-message]');
+            if (openMessageBtn) {
+                const touristId = String(openMessageBtn.dataset.openCommentMessage || '').trim();
+                const requestId = String(openMessageBtn.dataset.requestId || '').trim();
+                if (!touristId) {
+                    return;
+                }
+
+                startConversationWithTourist(requestId || null, touristId).then(function (result) {
+                    const conversationId = result && result.conversationId ? String(result.conversationId) : '';
+                    const redirect = result && result.redirect
+                        ? String(result.redirect)
+                        : '/guide/messages' + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
+                    window.location.href = redirect;
+                }).catch(function (error) {
+                    showToast(error && error.message ? error.message : 'Unable to open private chat right now.', 'danger');
+                });
+            }
+        });
+
         window.addEventListener('storage', function (event) {
             if (!event || event.key === TOURIST_REQUESTS_KEY) {
                 render();
@@ -1466,6 +1606,7 @@
         render();
         syncRequestsFromApi();
         initRealtimeRequestFeed();
+        initRequestFeedPolling();
     }
 
     function initBookingRequestsPage() {

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Booking;
 use App\Models\TourRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -34,23 +33,33 @@ class TouristController extends Controller
     {
         $user = $request->user();
 
+        $totalRequests = TourRequest::query()
+            ->where('tourist_id', $user->id)
+            ->count();
+
+        $openRequests = TourRequest::query()
+            ->where('tourist_id', $user->id)
+            ->where('status', 'open')
+            ->whereNull('selected_guide_id')
+            ->count();
+
+        $selectedGuides = TourRequest::query()
+            ->where('tourist_id', $user->id)
+            ->whereNotNull('selected_guide_id')
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->count();
+
+        $completedRequests = TourRequest::query()
+            ->where('tourist_id', $user->id)
+            ->where('status', 'completed')
+            ->count();
+
         return view('tourist.my-posts', [
             'stats' => [
-                'total_requests' => TourRequest::query()
-                    ->where('tourist_id', $user->id)
-                    ->count(),
-                'open_requests' => TourRequest::query()
-                    ->where('tourist_id', $user->id)
-                    ->whereIn('status', ['open', 'negotiating'])
-                    ->count(),
-                'selected_guides' => TourRequest::query()
-                    ->where('tourist_id', $user->id)
-                    ->whereNotNull('selected_guide_id')
-                    ->count(),
-                'completed' => Booking::query()
-                    ->where('tourist_id', $user->id)
-                    ->where('status', 'completed')
-                    ->count(),
+                'total_requests' => $totalRequests,
+                'open_requests' => $openRequests,
+                'selected_guides' => $selectedGuides,
+                'completed' => $completedRequests,
             ],
         ]);
     }

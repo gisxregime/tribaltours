@@ -844,6 +844,11 @@ textarea.input-soft:focus {
     color: #8f6512;
 }
 
+.badge-selected {
+    background: #fff4dd;
+    color: #7a5510;
+}
+
 .badge-complete {
     background: #eaf7e2;
     color: #477131;
@@ -1341,11 +1346,127 @@ textarea.input-soft:focus {
     color: #7a705f;
 }
 
+.thread-list {
+    display: grid;
+    gap: 8px;
+}
+
+.thread-comment {
+    border: 1px solid #e7ddca;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px;
+}
+
+.thread-comment[data-comment-depth="1"] {
+    margin-left: 14px;
+}
+
+.thread-comment[data-comment-depth="2"] {
+    margin-left: 28px;
+}
+
+.thread-comment[data-comment-depth="3"],
+.thread-comment[data-comment-depth="4"],
+.thread-comment[data-comment-depth="5"] {
+    margin-left: 40px;
+}
+
+.thread-comment-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.thread-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #ddd3bf;
+    flex-shrink: 0;
+}
+
+.thread-meta {
+    min-width: 0;
+}
+
+.thread-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.thread-role-pill {
+    border-radius: 999px;
+    border: 1px solid #e4d8c3;
+    background: #faf6ee;
+    color: #726753;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    line-height: 1.1;
+}
+
+.thread-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.thread-replies {
+    margin-top: 8px;
+    display: grid;
+    gap: 8px;
+}
+
+.thread-reply-form {
+    display: none;
+    margin-top: 8px;
+}
+
+.thread-reply-form.open {
+    display: block;
+}
+
+.btn-xs {
+    font-size: 12px;
+    line-height: 1.25;
+    padding: 5px 9px;
+}
+
 .booking-tabs {
     display: flex;
     gap: 8px;
     margin-bottom: 14px;
     flex-wrap: wrap;
+}
+
+.request-filter-tabs .tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.request-filter-count {
+    min-width: 20px;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    text-align: center;
+    border: 1px solid #e5dbc8;
+    color: #6a604f;
+    background: #fff;
+}
+
+.request-filter-tabs .tab-btn.active .request-filter-count {
+    border-color: #2d2b26;
+    color: #f5e2b0;
+    background: #2d2b26;
 }
 
 .tab-btn {

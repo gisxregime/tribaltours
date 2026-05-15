@@ -6,6 +6,8 @@ use App\Events\TouristMessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\TourRequest;
+use App\Models\User;
 use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -147,6 +149,67 @@ class MessageController extends Controller
             'ok' => true,
             'message' => $this->presentMessage($message->fresh(['sender']), (int) $request->user()->id),
         ], 201);
+    }
+
+    public function start(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'tour_request_id' => ['nullable', 'exists:tour_requests,id'],
+            'tourist_id' => ['required', 'exists:users,id'],
+            'body' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $tourist = User::query()->findOrFail($payload['tourist_id']);
+        $tourRequestId = $payload['tour_request_id'] ?? null;
+
+        if ($tourRequestId) {
+            $tourRequest = TourRequest::query()->findOrFail($tourRequestId);
+
+            $selectedGuideId = (int) ($tourRequest->selected_guide_id ?? 0);
+            if ($selectedGuideId > 0 && $selectedGuideId !== (int) $request->user()->id) {
+                abort(403);
+            }
+        }
+
+        $conversation = $this->canonicalConversationForPair((int) $request->user()->id, (int) $tourist->id);
+
+        if (!$conversation) {
+            $conversation = Conversation::query()->create([
+                'tourist_id' => $tourist->id,
+                'guide_id' => $request->user()->id,
+                'tour_request_id' => $tourRequestId,
+                'last_message_at' => now(),
+            ]);
+        } elseif (!$conversation->tour_request_id && $tourRequestId) {
+            $conversation->update(['tour_request_id' => $tourRequestId]);
+        }
+
+        $body = trim((string) ($payload['body'] ?? ''));
+        if ($body !== '') {
+            $message = Message::query()->create([
+                'conversation_id' => $conversation->id,
+                'sender_id' => $request->user()->id,
+                'body' => $body,
+                'is_read' => false,
+            ]);
+            $conversation->update(['last_message_at' => now()]);
+            DomainNotification::notifyUser(
+                $tourist,
+                'message.received',
+                trim((string) $request->user()->name) . ' sent you a new message.',
+                [
+                    'conversationId' => (string) $conversation->id,
+                    'senderId' => (string) $request->user()->id,
+                ]
+            );
+            event(new TouristMessageSent($message->fresh(['conversation', 'sender'])));
+        }
+
+        return response()->json([
+            'ok' => true,
+            'conversationId' => (string) $conversation->id,
+            'redirect' => '/guide/messages?conversation=' . urlencode((string) $conversation->id),
+        ]);
     }
 
     private function presentConversationGroupSummary(Collection $group, int $userId): ?array

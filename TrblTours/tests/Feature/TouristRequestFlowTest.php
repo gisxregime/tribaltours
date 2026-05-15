@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Conversation;
 use App\Models\TourRequest;
+use App\Models\TourRequestComment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -89,7 +90,7 @@ class TouristRequestFlowTest extends TestCase
         );
     }
 
-    public function test_negotiation_comments_are_locked_after_guide_selection(): void
+    public function test_only_selected_guide_can_comment_after_selection(): void
     {
         $tourist = User::factory()->create([
             'role' => 'tourist',
@@ -135,28 +136,42 @@ class TouristRequestFlowTest extends TestCase
             ])
             ->assertOk();
 
-        $this->actingAs($tourist)
-            ->postJson('/tourist/requests/' . $requestId . '/comment', [
+        $touristCommentResponse = $this->actingAs($tourist)
+            ->postJson('/tourist/requests/' . $requestId . '/comments', [
                 'text' => 'Can we move pickup to 7:00 AM?',
             ])
-            ->assertStatus(422)
-            ->assertJsonPath('ok', false);
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $touristCommentId = (string) collect($touristCommentResponse->json('request.comments') ?? [])
+            ->first(function ($item) {
+                return (string) ($item['authorRole'] ?? '') === 'tourist'
+                    && (string) ($item['text'] ?? '') === 'Can we move pickup to 7:00 AM?';
+            })['id'] ?? '';
+        $this->assertNotSame('', $touristCommentId);
 
         $this->actingAs($selectedGuide)
-            ->postJson('/guide/request-feed/' . $requestId . '/comment', [
-                'text' => 'Adding another public update after selection.',
+            ->postJson('/guide/request-feed/' . $requestId . '/comments', [
+                'text' => 'Confirmed, 7:00 AM pickup works for us.',
+                'parent_comment_id' => $touristCommentId,
                 'offer_amount' => 6900,
             ])
-            ->assertStatus(422)
-            ->assertJsonPath('ok', false);
+            ->assertOk()
+            ->assertJsonPath('ok', true);
 
         $this->actingAs($otherGuide)
-            ->postJson('/guide/request-feed/' . $requestId . '/comment', [
+            ->postJson('/guide/request-feed/' . $requestId . '/comments', [
                 'text' => 'I am still available if needed.',
                 'offer_amount' => 6500,
             ])
             ->assertStatus(403)
             ->assertJsonPath('ok', false);
+
+        $this->assertDatabaseHas('tour_request_comments', [
+            'tour_request_id' => $requestId,
+            'parent_comment_id' => $touristCommentId,
+            'author_id' => $selectedGuide->id,
+        ]);
     }
 
     public function test_tourist_comment_uses_tourist_avatar_in_my_posts_negotiation_feed(): void
@@ -203,6 +218,61 @@ class TouristRequestFlowTest extends TestCase
         $this->assertNotEmpty($request['comments'] ?? []);
         $this->assertSame('Tourist With Avatar', $request['comments'][0]['guideName'] ?? null);
         $this->assertSame('/images/avatars/tourist_ava.png', $request['comments'][0]['guideAvatar'] ?? null);
+    }
+
+    public function test_tourist_my_posts_payload_includes_guide_comment_text_for_inline_display(): void
+    {
+        $tourist = User::factory()->create([
+            'role' => 'tourist',
+            'email_verified_at' => now(),
+        ]);
+
+        $guide = User::factory()->create([
+            'role' => 'guide',
+            'email_verified_at' => now(),
+            'name' => 'Guide Elaine',
+        ]);
+
+        $createResponse = $this->actingAs($tourist)
+            ->postJson('/tourist/requests', [
+                'title' => 'Inline Comment Visibility Request',
+                'description' => 'Need offers that can be shown directly on My Posts.',
+                'location' => 'Davao City',
+                'region' => 'Davao Region',
+                'duration' => '1',
+                'adults' => 2,
+                'children' => 0,
+                'budget' => 5000,
+                'interests' => ['Nature'],
+            ])
+            ->assertCreated();
+
+        $requestId = (string) $createResponse->json('request.id');
+
+        $this->actingAs($guide)
+            ->postJson('/guide/request-feed/' . $requestId . '/comment', [
+                'text' => 'I can handle this as a full-day package with lunch.',
+                'offer_amount' => 4800,
+            ])
+            ->assertOk();
+
+        $mineResponse = $this->actingAs($tourist)
+            ->getJson('/tourist/requests/mine')
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $request = collect($mineResponse->json('requests'))->first(function ($item) use ($requestId) {
+            return (string) ($item['id'] ?? '') === $requestId;
+        });
+
+        $this->assertNotNull($request);
+        $guideComment = collect($request['comments'] ?? [])->first(function ($item) use ($guide) {
+            return (string) ($item['guideId'] ?? '') === (string) $guide->id;
+        });
+
+        $this->assertNotNull($guideComment);
+        $this->assertSame('guide', $guideComment['authorRole'] ?? null);
+        $this->assertSame('I can handle this as a full-day package with lunch.', $guideComment['text'] ?? null);
     }
 
     public function test_tourist_can_create_detailed_request_and_notify_guides_on_request_comment(): void
@@ -394,7 +464,129 @@ class TouristRequestFlowTest extends TestCase
         $this->assertNotNull($unselectResponse->json('request'));
     }
 
-    public function test_tourist_can_mark_request_as_cancelled_without_deleting_it(): void
+    public function test_threaded_comment_replies_are_nested_in_payload(): void
+    {
+        $tourist = User::factory()->create([
+            'role' => 'tourist',
+            'email_verified_at' => now(),
+        ]);
+
+        $guide = User::factory()->create([
+            'role' => 'guide',
+            'email_verified_at' => now(),
+        ]);
+
+        $createResponse = $this->actingAs($tourist)
+            ->postJson('/tourist/requests', [
+                'title' => 'Threaded comment request',
+                'description' => 'Testing nested replies.',
+                'location' => 'Davao City',
+                'region' => 'Davao Region',
+                'duration' => '1',
+                'adults' => 2,
+                'children' => 0,
+                'budget' => 4000,
+                'interests' => ['Nature'],
+            ])
+            ->assertCreated();
+
+        $requestId = (string) $createResponse->json('request.id');
+
+        $guideCommentResponse = $this->actingAs($guide)
+            ->postJson('/guide/request-feed/' . $requestId . '/comments', [
+                'text' => 'I can handle this as your local guide.',
+                'offer_amount' => 3900,
+            ])
+            ->assertOk();
+
+        $guideCommentId = (string) TourRequestComment::query()
+            ->where('tour_request_id', $requestId)
+            ->where('author_id', $guide->id)
+            ->value('id');
+
+        $this->assertNotSame('', $guideCommentId);
+
+        $this->actingAs($tourist)
+            ->postJson('/tourist/requests/' . $requestId . '/comments', [
+                'text' => 'Sounds good. Can we include a lunch stop?',
+                'parent_comment_id' => $guideCommentId,
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $commentsResponse = $this->actingAs($tourist)
+            ->getJson('/tourist/requests/' . $requestId . '/comments')
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $comments = collect($commentsResponse->json('comments') ?? []);
+        $rootGuideComment = $comments->first(function ($entry) use ($guideCommentId) {
+            return (string) ($entry['id'] ?? '') === $guideCommentId;
+        });
+
+        $this->assertNotNull($rootGuideComment);
+        $this->assertSame('guide', (string) ($rootGuideComment['authorRole'] ?? ''));
+        $this->assertNotEmpty($rootGuideComment['replies'] ?? []);
+        $this->assertSame('tourist', (string) ($rootGuideComment['replies'][0]['authorRole'] ?? ''));
+    }
+
+    public function test_tourist_can_select_guide_using_comment_id(): void
+    {
+        $tourist = User::factory()->create([
+            'role' => 'tourist',
+            'email_verified_at' => now(),
+        ]);
+
+        $guide = User::factory()->create([
+            'role' => 'guide',
+            'email_verified_at' => now(),
+        ]);
+
+        $createResponse = $this->actingAs($tourist)
+            ->postJson('/tourist/requests', [
+                'title' => 'Select from comment',
+                'description' => 'Select guide using comment reference.',
+                'location' => 'Tagum City',
+                'region' => 'Davao Region',
+                'duration' => '1',
+                'adults' => 2,
+                'children' => 0,
+                'budget' => 4300,
+                'interests' => ['Culture'],
+            ])
+            ->assertCreated();
+
+        $requestId = (string) $createResponse->json('request.id');
+
+        $this->actingAs($guide)
+            ->postJson('/guide/request-feed/' . $requestId . '/comments', [
+                'text' => 'Available with transport and itinerary support.',
+                'offer_amount' => 4200,
+            ])
+            ->assertOk();
+
+        $guideCommentId = (string) TourRequestComment::query()
+            ->where('tour_request_id', $requestId)
+            ->where('author_id', $guide->id)
+            ->value('id');
+
+        $this->actingAs($tourist)
+            ->postJson('/tourist/requests/' . $requestId . '/select-guide', [
+                'comment_id' => $guideCommentId,
+                'offer_amount' => 4200,
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('request.selectedGuideId', (string) $guide->id);
+
+        $this->assertDatabaseHas('tour_requests', [
+            'id' => $requestId,
+            'selected_guide_id' => $guide->id,
+            'status' => 'closed',
+        ]);
+    }
+
+    public function test_tourist_can_delete_request_post(): void
     {
         $tourist = User::factory()->create([
             'role' => 'tourist',
@@ -403,8 +595,8 @@ class TouristRequestFlowTest extends TestCase
 
         $createResponse = $this->actingAs($tourist)
             ->postJson('/tourist/requests', [
-                'title' => 'Cancel status request',
-                'description' => 'Should stay in history as cancelled.',
+                'title' => 'Delete request post',
+                'description' => 'Should be removed from the tourist requests list.',
                 'location' => 'Tagum City',
                 'region' => 'Davao Region',
                 'duration' => '1',
@@ -418,17 +610,12 @@ class TouristRequestFlowTest extends TestCase
         $requestId = (string) $createResponse->json('request.id');
 
         $this->actingAs($tourist)
-            ->patchJson('/tourist/requests/' . $requestId, [
-                'status' => 'closed',
-            ])
+            ->deleteJson('/tourist/requests/' . $requestId)
             ->assertOk()
-            ->assertJsonPath('ok', true)
-            ->assertJsonPath('request.status', 'closed')
-            ->assertJsonPath('request.negotiationStatus', 'cancelled');
+            ->assertJsonPath('ok', true);
 
-        $this->assertDatabaseHas('tour_requests', [
+        $this->assertDatabaseMissing('tour_requests', [
             'id' => $requestId,
-            'status' => 'closed',
         ]);
     }
 }

@@ -15,10 +15,13 @@ Route::middleware(['auth', 'verified', 'role:guide'])->prefix('guide')->as('guid
     Route::patch('account/profile', [AccountController::class, 'updateProfile'])->name('account.profile.update');
     Route::get('dashboard', [GuideDashboardController::class, 'index'])->name('dashboard');
     Route::get('request-feed', [TourRequestFeedController::class, 'index'])->name('request-feed.index');
+    Route::get('request-feed/{tourRequest}/comments', [TourRequestFeedController::class, 'comments'])->name('request-feed.comments');
+    Route::post('request-feed/{tourRequest}/comments', [TourRequestFeedController::class, 'comment'])->name('request-feed.comments.store');
     Route::post('request-feed/{tourRequest}/comment', [TourRequestFeedController::class, 'comment'])->name('request-feed.comment');
     Route::get('messages/threads', [MessageController::class, 'threads'])->name('messages.threads');
     Route::get('messages/threads/{conversation}', [MessageController::class, 'thread'])->name('messages.thread');
     Route::post('messages/threads/{conversation}', [MessageController::class, 'sendToThread'])->name('messages.thread.send');
+    Route::post('messages/start', [MessageController::class, 'start'])->name('messages.start');
     Route::get('earnings', [EarningsController::class, 'index'])->name('earnings.index');
     Route::resource('tours', TourListingController::class);
     Route::resource('booking-requests', BookingRequestController::class)

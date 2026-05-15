@@ -11,17 +11,22 @@ use App\Models\Booking;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\TourRequest;
+use App\Models\TourRequestComment;
 use App\Models\User;
 use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class TourRequestController extends Controller
 {
+    private static ?bool $hasTourRequestCommentsTable = null;
+
     public function index(Request $request): View
     {
         $requests = $request->user()->tourRequests()->latest()->paginate(12);
@@ -138,10 +143,16 @@ class TourRequestController extends Controller
 
     public function mine(Request $request): JsonResponse
     {
-        $requests = $request->user()->tourRequests()
-            ->with(['tourist', 'selectedGuide.guideProfile'])
+        $query = $request->user()->tourRequests()
+            ->with(['tourist', 'selectedGuide.guideProfile', 'conversations'])
             ->latest()
-            ->limit(100)
+            ->limit(100);
+
+        if ($this->hasTourRequestCommentsTable()) {
+            $query->with('comments.author.guideProfile');
+        }
+
+        $requests = $query
             ->get()
             ->map(function (TourRequest $tourRequest) {
                 return $this->presentRequest($tourRequest);
@@ -155,37 +166,66 @@ class TourRequestController extends Controller
         ]);
     }
 
+    public function comments(TourRequest $tourRequest): JsonResponse
+    {
+        abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
+
+        if (!$this->hasTourRequestCommentsTable()) {
+            return response()->json([
+                'ok' => true,
+                'comments' => [],
+            ]);
+        }
+
+        $tourRequest->loadMissing('comments.author.guideProfile');
+
+        return response()->json([
+            'ok' => true,
+            'comments' => $this->presentComments($tourRequest),
+        ]);
+    }
+
     public function addComment(Request $request, TourRequest $tourRequest): JsonResponse
     {
         abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
-        if ($tourRequest->selected_guide_id) {
+        if (!$this->hasTourRequestCommentsTable()) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Negotiation is locked after guide selection. Continue in private chat.',
-            ], 422);
+                'message' => 'Comments are temporarily unavailable until database updates are applied.',
+            ], 503);
         }
 
         $payload = $request->validate([
             'text' => ['required', 'string', 'max:2000'],
+            'parent_comment_id' => ['nullable', 'exists:tour_request_comments,id'],
         ]);
 
-        $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
-        $comments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
-        $comments[] = [
-            'id' => (string) Str::uuid(),
-            'guideId' => null,
-            'authorId' => (string) $request->user()->id,
-            'authorRole' => 'tourist',
-            'guideName' => trim((string) $request->user()->name),
-            'guideAvatar' => $this->resolveAvatarPath($request->user()->avatar_path, '/images/manila.jpg'),
-            'text' => trim((string) $payload['text']),
-            'offerAmount' => null,
-            'createdAt' => now()->toISOString(),
-        ];
+        $parentComment = null;
+        if (!empty($payload['parent_comment_id'])) {
+            $parentComment = TourRequestComment::query()
+                ->where('tour_request_id', $tourRequest->id)
+                ->where('id', (string) $payload['parent_comment_id'])
+                ->first();
 
-        $metadata['comments'] = $comments;
-        $tourRequest->update(['metadata' => $metadata]);
+            if (!$parentComment) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Unable to locate parent comment for this request.',
+                ], 422);
+            }
+        }
+
+        TourRequestComment::query()->create([
+            'tour_request_id' => $tourRequest->id,
+            'parent_comment_id' => $parentComment?->id,
+            'author_id' => $request->user()->id,
+            'author_role' => 'tourist',
+            'author_name' => trim((string) $request->user()->name),
+            'author_avatar_url' => $this->resolveAvatarPath($request->user()->avatar_path, '/images/manila.jpg'),
+            'text' => trim((string) $payload['text']),
+            'offer_amount' => null,
+        ]);
 
         $tourRequest->loadMissing('selectedGuide');
         if ($tourRequest->selectedGuide) {
@@ -213,11 +253,11 @@ class TourRequestController extends Controller
             );
         }
 
-        event(new TourRequestUpdated($tourRequest->fresh(['tourist', 'selectedGuide'])));
+        event(new TourRequestUpdated($tourRequest->fresh(['tourist', 'selectedGuide', 'comments.author.guideProfile'])));
 
         return response()->json([
             'ok' => true,
-            'request' => $this->presentRequest($tourRequest->fresh(['tourist', 'selectedGuide'])),
+            'request' => $this->presentRequest($tourRequest->fresh(['tourist', 'selectedGuide', 'comments.author.guideProfile'])),
         ]);
     }
 
@@ -225,13 +265,36 @@ class TourRequestController extends Controller
     {
         abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
-        $payload = $request->validate([
-            'guide_id' => ['required', 'exists:users,id'],
+        $rules = [
+            'guide_id' => ['nullable', 'exists:users,id'],
             'offer_amount' => ['nullable', 'numeric', 'min:0'],
             'intro_message' => ['nullable', 'string', 'max:2000'],
-        ]);
+        ];
+        if ($this->hasTourRequestCommentsTable()) {
+            $rules['comment_id'] = ['nullable', 'exists:tour_request_comments,id'];
+        } else {
+            $rules['comment_id'] = ['nullable', 'string', 'max:64'];
+        }
 
-        $guide = User::query()->findOrFail($payload['guide_id']);
+        $payload = $request->validate($rules);
+
+        $guideId = isset($payload['guide_id']) ? (int) $payload['guide_id'] : 0;
+        if ($guideId <= 0 && $this->hasTourRequestCommentsTable() && !empty($payload['comment_id'])) {
+            $guideId = (int) TourRequestComment::query()
+                ->where('tour_request_id', $tourRequest->id)
+                ->where('id', (string) $payload['comment_id'])
+                ->where('author_role', 'guide')
+                ->value('author_id');
+        }
+
+        if ($guideId <= 0) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Please choose a guide comment before selecting.',
+            ], 422);
+        }
+
+        $guide = User::query()->findOrFail($guideId);
         abort_unless((string) $guide->role === 'guide', 422);
 
         if ($tourRequest->selected_guide_id && (int) $tourRequest->selected_guide_id !== (int) $guide->id) {
@@ -241,15 +304,13 @@ class TourRequestController extends Controller
             ], 422);
         }
 
-        $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
-        $comments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
-        $hasGuideOffer = collect($comments)->contains(function ($entry) use ($guide) {
-            if (!is_array($entry)) {
-                return false;
-            }
-
-            return (int) ($entry['guideId'] ?? 0) === (int) $guide->id;
-        });
+        $hasGuideOffer = $this->hasTourRequestCommentsTable()
+            ? TourRequestComment::query()
+                ->where('tour_request_id', $tourRequest->id)
+                ->where('author_role', 'guide')
+                ->where('author_id', $guide->id)
+                ->exists()
+            : true;
 
         if (!$hasGuideOffer && !$tourRequest->selected_guide_id) {
             return response()->json([
@@ -259,8 +320,15 @@ class TourRequestController extends Controller
         }
 
         $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
+        $selectedGuides = array_values(array_unique(array_filter(array_map(function ($value) {
+            return trim((string) $value);
+        }, is_array($metadata['selected_guides'] ?? null) ? $metadata['selected_guides'] : []))));
+        $selectedGuides[] = (string) $guide->id;
+        $selectedGuides = array_values(array_unique($selectedGuides));
+
         $metadata['selected_guide_name'] = trim((string) $guide->name);
         $metadata['selected_guide_id'] = (string) $guide->id;
+        $metadata['selected_guides'] = $selectedGuides;
         $metadata['selected_at'] = now()->toISOString();
 
         $tourRequest->update([
@@ -377,7 +445,6 @@ class TourRequestController extends Controller
 
         $previousGuide = User::query()->find((int) $tourRequest->selected_guide_id);
         $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
-        $comments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
 
         unset(
             $metadata['selected_guide_name'],
@@ -386,9 +453,14 @@ class TourRequestController extends Controller
             $metadata['selected_conversation_id']
         );
 
-        $nextStatus = collect($comments)->contains(function ($entry) {
-            return is_array($entry) && (int) ($entry['guideId'] ?? 0) > 0;
-        })
+        $hasGuideComments = $this->hasTourRequestCommentsTable()
+            ? TourRequestComment::query()
+                ->where('tour_request_id', $tourRequest->id)
+                ->where('author_role', 'guide')
+                ->exists()
+            : false;
+
+        $nextStatus = $hasGuideComments
             ? 'negotiating'
             : 'open';
 
@@ -422,9 +494,14 @@ class TourRequestController extends Controller
         abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
 
         if (request()->expectsJson() || request()->wantsJson()) {
+            $relations = ['tourist', 'selectedGuide.guideProfile', 'conversations'];
+            if ($this->hasTourRequestCommentsTable()) {
+                $relations[] = 'comments.author.guideProfile';
+            }
+
             return response()->json([
                 'ok' => true,
-                'request' => $this->presentRequest($tourRequest->fresh(['tourist', 'selectedGuide.guideProfile', 'conversations'])),
+                'request' => $this->presentRequest($tourRequest->fresh($relations)),
             ]);
         }
 
@@ -459,7 +536,7 @@ class TourRequestController extends Controller
             'travelers_label' => ['sometimes', 'nullable', 'string', 'max:120'],
             'interests' => ['sometimes', 'nullable', 'array'],
             'interests.*' => ['string', 'max:80'],
-            'status' => ['sometimes', 'nullable', 'in:open,negotiating,closed,completed'],
+            'status' => ['sometimes', 'nullable', 'in:open,negotiating,closed,completed,cancelled'],
         ];
 
         $payload = $request->validate($rules);
@@ -488,7 +565,7 @@ class TourRequestController extends Controller
     public function destroy(Request $request, TourRequest $tourRequest): JsonResponse|RedirectResponse
     {
         abort_unless((int) $tourRequest->tourist_id === (int) Auth::id(), 403);
-        $tourRequest->delete();
+        $tourRequest->forceDelete();
 
         if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json([
@@ -496,7 +573,7 @@ class TourRequestController extends Controller
             ]);
         }
 
-        return back()->with('status', 'Tour request removed.');
+        return back()->with('status', 'Tour request deleted.');
     }
 
     private function presentRequest(TourRequest $tourRequest): array
@@ -504,60 +581,7 @@ class TourRequestController extends Controller
         $tourist = $tourRequest->tourist;
         $selectedGuide = $tourRequest->selectedGuide;
         $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
-
-        $rawComments = is_array($metadata['comments'] ?? null) ? $metadata['comments'] : [];
-        $guideIds = collect($rawComments)->map(function ($entry) {
-            if (!is_array($entry) || !isset($entry['guideId'])) {
-                return null;
-            }
-
-            $value = (int) $entry['guideId'];
-            return $value > 0 ? $value : null;
-        })->filter()->unique()->values();
-
-        $guideLookup = User::query()
-            ->with('guideProfile')
-            ->whereIn('id', $guideIds)
-            ->get()
-            ->keyBy('id');
-
-        $comments = array_values(array_filter(array_map(function ($entry) use ($guideLookup, $tourist) {
-            if (!is_array($entry)) {
-                return null;
-            }
-
-            $text = trim((string) ($entry['text'] ?? ''));
-            if ($text === '') {
-                return null;
-            }
-
-            $guideIdValue = isset($entry['guideId']) ? (int) $entry['guideId'] : 0;
-            $guideId = $guideIdValue > 0 ? (string) $guideIdValue : null;
-            $guideModel = $guideId !== null ? $guideLookup->get($guideIdValue) : null;
-            $guideProfile = $guideModel?->guideProfile;
-            $resolvedGuideName = trim((string) ($guideModel?->name ?? ($tourist?->name ?? ($entry['guideName'] ?? 'Guide'))));
-            $resolvedGuideAvatar = $this->resolveAvatarPath(
-                $guideModel?->avatar_path
-                    ?? ($guideId === null ? $tourist?->avatar_path : null)
-                    ?? ($entry['guideAvatar'] ?? null),
-                '/images/manila.jpg'
-            );
-
-            return [
-                'id' => (string) ($entry['id'] ?? Str::uuid()),
-                'guideId' => $guideId,
-                'guideName' => $resolvedGuideName,
-                'guideAvatar' => $resolvedGuideAvatar,
-                'guideBio' => (string) ($guideModel?->bio ?? ''),
-                'guidePhone' => (string) ($guideModel?->phone ?? ''),
-                'guideLocation' => (string) ($guideModel?->location ?? ''),
-                'guideLanguages' => (string) ($guideProfile?->languages_spoken ?? ''),
-                'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
-                'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
-                'offerAmount' => isset($entry['offerAmount']) ? (float) $entry['offerAmount'] : null,
-                'createdAt' => (string) ($entry['createdAt'] ?? now()->toISOString()),
-            ];
-        }, $rawComments)));
+        $comments = $this->presentComments($tourRequest);
 
         $conversationId = null;
         $metaConversationId = trim((string) ($metadata['selected_conversation_id'] ?? ''));
@@ -581,12 +605,13 @@ class TourRequestController extends Controller
             }
         }
 
+        $statusBucket = $this->resolveRequestBucket($tourRequest);
         $negotiationStatus = 'open';
-        if ((string) $tourRequest->status === 'completed') {
+        if ($statusBucket === 'completed') {
             $negotiationStatus = 'completed';
-        } elseif ((string) $tourRequest->status === 'closed' && !$tourRequest->selected_guide_id) {
+        } elseif ($statusBucket === 'cancelled') {
             $negotiationStatus = 'cancelled';
-        } elseif (count($comments) > 0 || in_array((string) $tourRequest->status, ['negotiating', 'closed'], true) || $tourRequest->selected_guide_id) {
+        } elseif ($statusBucket === 'negotiating' || $statusBucket === 'selected') {
             $negotiationStatus = 'negotiating';
         }
 
@@ -610,6 +635,7 @@ class TourRequestController extends Controller
                 return trim((string) $value);
             }, is_array($tourRequest->interests) ? $tourRequest->interests : []))),
             'status' => (string) $tourRequest->status,
+            'statusBucket' => $statusBucket,
             'negotiationStatus' => $negotiationStatus,
             'selectedGuideId' => $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null,
             'selectedGuideName' => $selectedGuide ? trim((string) $selectedGuide->name) : null,
@@ -629,23 +655,23 @@ class TourRequestController extends Controller
 
     private function buildRequestStats(User $tourist): array
     {
-        $openStatuses = ['open', 'negotiating'];
-
         $totalRequests = TourRequest::query()
             ->where('tourist_id', $tourist->id)
             ->count();
 
         $openRequests = TourRequest::query()
             ->where('tourist_id', $tourist->id)
-            ->whereIn('status', $openStatuses)
+            ->where('status', 'open')
+            ->whereNull('selected_guide_id')
             ->count();
 
         $selectedGuides = TourRequest::query()
             ->where('tourist_id', $tourist->id)
             ->whereNotNull('selected_guide_id')
+            ->whereNotIn('status', ['completed', 'cancelled'])
             ->count();
 
-        $completedBookings = Booking::query()
+        $completedRequests = TourRequest::query()
             ->where('tourist_id', $tourist->id)
             ->where('status', 'completed')
             ->count();
@@ -654,8 +680,158 @@ class TourRequestController extends Controller
             'total_requests' => $totalRequests,
             'open_requests' => $openRequests,
             'selected_guides' => $selectedGuides,
-            'completed' => $completedBookings,
+            'completed' => $completedRequests,
         ];
+    }
+
+    private function resolveRequestBucket(TourRequest $tourRequest): string
+    {
+        $status = strtolower(trim((string) $tourRequest->status));
+        $hasSelectedGuide = (int) ($tourRequest->selected_guide_id ?? 0) > 0;
+
+        if ($status === 'completed') {
+            return 'completed';
+        }
+
+        if ($status === 'cancelled' || ($status === 'closed' && !$hasSelectedGuide)) {
+            return 'cancelled';
+        }
+
+        if ($hasSelectedGuide) {
+            return 'selected';
+        }
+
+        if ($status === 'negotiating') {
+            return 'negotiating';
+        }
+
+        return 'open';
+    }
+
+    private function presentComments(TourRequest $tourRequest): array
+    {
+        if (!$this->hasTourRequestCommentsTable()) {
+            return [];
+        }
+
+        $comments = $tourRequest->relationLoaded('comments')
+            ? $tourRequest->comments
+            : $tourRequest->comments()->with('author.guideProfile')->get();
+
+        return $this->buildCommentTree(
+            $comments,
+            $tourRequest->selected_guide_id ? (string) $tourRequest->selected_guide_id : null
+        );
+    }
+
+    private function buildCommentTree(Collection $comments, ?string $selectedGuideId = null): array
+    {
+        $normalized = $comments
+            ->sortBy(function (TourRequestComment $comment) {
+                $timestamp = (int) (optional($comment->created_at)->getTimestamp() ?? 0);
+
+                return str_pad((string) $timestamp, 12, '0', STR_PAD_LEFT) . '-' . (string) $comment->id;
+            })
+            ->map(function (TourRequestComment $comment) use ($selectedGuideId) {
+                $author = $comment->author;
+                $guideProfile = $author?->guideProfile;
+                $authorRole = $this->resolveAuthorRole($comment->author_role, $author?->role);
+                $authorId = $comment->author_id ? (string) $comment->author_id : null;
+
+                return [
+                    'id' => (string) $comment->id,
+                    'requestId' => (string) $comment->tour_request_id,
+                    'parentCommentId' => $comment->parent_comment_id ? (string) $comment->parent_comment_id : null,
+                    'authorId' => $authorId,
+                    'authorRole' => $authorRole,
+                    'authorName' => trim((string) ($author?->name ?? ($comment->author_name ?: 'User'))),
+                    'authorAvatar' => $this->resolveAvatarPath(
+                        $author?->avatar_path
+                            ?: $comment->author_avatar_url,
+                        '/images/manila.jpg'
+                    ),
+                    'guideId' => $authorRole === 'guide' ? $authorId : null,
+                    'guideName' => trim((string) ($author?->name ?? ($comment->author_name ?: 'Guide'))),
+                    'guideAvatar' => $this->resolveAvatarPath(
+                        $author?->avatar_path
+                            ?: $comment->author_avatar_url,
+                        '/images/manila.jpg'
+                    ),
+                    'guideBio' => $authorRole === 'guide' ? (string) ($author?->bio ?? '') : '',
+                    'guidePhone' => $authorRole === 'guide' ? (string) ($author?->phone ?? '') : '',
+                    'guideLocation' => $authorRole === 'guide' ? (string) ($author?->location ?? '') : '',
+                    'guideLanguages' => $authorRole === 'guide' ? (string) ($guideProfile?->languages_spoken ?? '') : '',
+                    'guideSpecialties' => $authorRole === 'guide' ? (string) ($guideProfile?->areas_of_expertise ?? '') : '',
+                    'guideCertifications' => $authorRole === 'guide' ? (string) ($guideProfile?->guide_certificate_number ?? '') : '',
+                    'text' => (string) ($comment->text ?? ''),
+                    'offerAmount' => $comment->offer_amount !== null ? (float) $comment->offer_amount : null,
+                    'createdAt' => optional($comment->created_at)->toISOString(),
+                    'isSelectedGuide' => $authorRole === 'guide' && $selectedGuideId !== null && $authorId === $selectedGuideId,
+                    'replies' => [],
+                ];
+            })
+            ->values();
+
+        $entries = [];
+        $childrenByParent = [];
+
+        foreach ($normalized as $entry) {
+            $entryId = (string) ($entry['id'] ?? '');
+            if ($entryId === '') {
+                continue;
+            }
+
+            $entries[$entryId] = $entry;
+            $parentKey = $entry['parentCommentId'] ? (string) $entry['parentCommentId'] : '__root__';
+            if (!array_key_exists($parentKey, $childrenByParent)) {
+                $childrenByParent[$parentKey] = [];
+            }
+            $childrenByParent[$parentKey][] = $entryId;
+        }
+
+        $buildNode = function (string $id) use (&$buildNode, $entries, $childrenByParent): array {
+            if (!array_key_exists($id, $entries)) {
+                return [];
+            }
+
+            $node = $entries[$id];
+            $childIds = $childrenByParent[$id] ?? [];
+            $node['replies'] = array_values(array_filter(array_map(function ($childId) use ($buildNode) {
+                return $buildNode((string) $childId);
+            }, $childIds)));
+
+            return $node;
+        };
+
+        $rootIds = $childrenByParent['__root__'] ?? [];
+
+        return array_values(array_filter(array_map(function ($rootId) use ($buildNode) {
+            return $buildNode((string) $rootId);
+        }, $rootIds)));
+    }
+
+    private function resolveAuthorRole(?string $commentRole, ?string $userRole): string
+    {
+        $normalizedCommentRole = strtolower(trim((string) $commentRole));
+        if (in_array($normalizedCommentRole, ['tourist', 'guide'], true)) {
+            return $normalizedCommentRole;
+        }
+
+        $normalizedUserRole = strtolower(trim((string) $userRole));
+        if (in_array($normalizedUserRole, ['tourist', 'guide'], true)) {
+            return $normalizedUserRole;
+        }
+
+        return 'guide';
+    }
+
+    private function hasTourRequestCommentsTable(): bool
+    {
+        if (self::$hasTourRequestCommentsTable === null) {
+            self::$hasTourRequestCommentsTable = Schema::hasTable('tour_request_comments');
+        }
+
+        return self::$hasTourRequestCommentsTable;
     }
 
     private function resolveAvatarPath(?string $path, string $fallback = '/images/manila.jpg'): string

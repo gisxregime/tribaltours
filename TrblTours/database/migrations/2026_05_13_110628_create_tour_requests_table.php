@@ -24,7 +24,7 @@ return new class extends Migration
             $table->string('duration_label')->nullable();
             $table->string('travelers_label')->nullable();
             $table->json('interests')->nullable();
-            $table->enum('status', ['open', 'negotiating', 'closed', 'completed'])->default('open');
+            $table->enum('status', ['open', 'negotiating', 'closed', 'completed', 'cancelled'])->default('open');
             $table->json('metadata')->nullable();
             $table->timestamps();
             $table->softDeletes();
