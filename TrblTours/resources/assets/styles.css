@@ -1478,6 +1478,12 @@ textarea.input-soft:focus {
     overflow: hidden;
 }
 
+.chat-window {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 175px);
+}
+
 .conversation-search {
     padding: 10px;
     border-bottom: 1px solid var(--border);
@@ -1526,8 +1532,9 @@ textarea.input-soft:focus {
 
 .chat-messages {
     padding: 14px;
-    height: calc(100vh - 330px);
-    overflow: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
     background: #fcfaf4;
 }
 
@@ -1846,8 +1853,8 @@ textarea.input-soft:focus {
         min-height: 220px;
     }
 
-    .chat-messages {
-        height: 360px;
+    .chat-window {
+        height: calc(100vh - 200px);
     }
 }
 
@@ -1880,5 +1887,11 @@ textarea.input-soft:focus {
 
     .post-gallery {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .account-page[data-page="messages"] .chat-window,
+    .account-page[data-page="guide-messages"] .chat-window {
+        height: calc(100vh - 220px);
+        min-height: 300px;
     }
 }

@@ -75,7 +75,6 @@
 
             <main class="content-wrap">
                 <section class="page-header">
-                    <p class="text-muted small mb-2">Account owner</p>
                     <h1 class="guide-page-title">Dashboard</h1>
                 </section>
 
