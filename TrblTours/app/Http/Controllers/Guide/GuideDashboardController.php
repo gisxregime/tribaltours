@@ -30,6 +30,21 @@ class GuideDashboardController extends Controller
         ]);
     }
 
+    public function earningsBreakdown(Request $request): View
+    {
+        return view('legacy.pages.earnings-breakdown');
+    }
+
+    public function requestPayments(Request $request): View
+    {
+        return view('legacy.pages.tour-request-payments');
+    }
+
+    public function reviewsPage(Request $request): View
+    {
+        return view('legacy.pages.guide-reviews');
+    }
+
     private function buildStats(int $guideId): array
     {
         $listingIds = TourListing::query()->where('guide_id', $guideId)->pluck('id');

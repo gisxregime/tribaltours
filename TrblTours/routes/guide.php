@@ -23,6 +23,9 @@ Route::middleware(['auth', 'verified', 'role:guide'])->prefix('guide')->as('guid
     Route::post('messages/threads/{conversation}', [MessageController::class, 'sendToThread'])->name('messages.thread.send');
     Route::post('messages/start', [MessageController::class, 'start'])->name('messages.start');
     Route::get('earnings', [EarningsController::class, 'index'])->name('earnings.index');
+    Route::get('earnings-breakdown', [GuideDashboardController::class, 'earningsBreakdown'])->name('earnings-breakdown');
+    Route::get('request-payments', [GuideDashboardController::class, 'requestPayments'])->name('request-payments');
+    Route::get('reviews', [GuideDashboardController::class, 'reviewsPage'])->name('reviews');
     Route::resource('tours', TourListingController::class);
     Route::resource('booking-requests', BookingRequestController::class)
         ->parameters(['booking-requests' => 'booking']);

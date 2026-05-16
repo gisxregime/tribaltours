@@ -2911,3 +2911,130 @@ textarea.input-soft:focus {
         font-size: 1.85rem;
     }
 }
+
+/* ============================================
+   DASHBOARD ENHANCEMENTS – clickable stat cards
+   "See More" / "View More" links, skeleton loaders,
+   empty states, new detail pages
+   ============================================ */
+
+/* --- Clickable stat cards --- */
+.stat-card-clickable {
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+    user-select: none;
+}
+.stat-card-clickable:hover,
+.stat-card-clickable:focus-visible {
+    background: #f0f6ff;
+    border-color: #6da4e0;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(31,95,166,0.10);
+    outline: none;
+}
+.stat-card-clickable:active {
+    transform: translateY(0);
+}
+
+/* --- "See More" link inside Total Earnings stat card --- */
+.stat-see-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #0f766e;
+    text-decoration: none;
+    transition: color 0.15s, gap 0.15s;
+}
+.stat-see-more:hover {
+    color: #0d5e57;
+    gap: 7px;
+}
+
+/* --- "View More" links in section headers --- */
+.dash-view-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1f5fa6;
+    text-decoration: none;
+    transition: color 0.15s, gap 0.15s;
+}
+.dash-view-more:hover {
+    color: #163f70;
+    gap: 7px;
+}
+
+/* --- Skeleton loader --- */
+.dash-skeleton-list {
+    display: grid;
+    gap: 10px;
+}
+.dash-skeleton-row {
+    height: 58px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e4e4e4 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skel-shimmer 1.4s infinite;
+}
+@keyframes skel-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* --- Empty state in detail pages --- */
+.dash-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 48px 24px;
+    color: #9ca3af;
+    text-align: center;
+}
+.dash-empty-state i {
+    font-size: 2.5rem;
+    opacity: 0.35;
+}
+.dash-empty-state p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+/* --- Earnings Breakdown total badge --- */
+.earnings-breakdown-total-badge {
+    background: #0f766e;
+    color: #fff;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.1rem;
+    padding: 6px 14px;
+    border-radius: 20px;
+}
+
+/* --- Dashboard "Tour Request Earnings" compact row (avatar + name only) --- */
+.sim-compact-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+.sim-compact-row:last-child { border-bottom: none; }
+.sim-compact-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+.sim-compact-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+}

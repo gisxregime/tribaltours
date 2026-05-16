@@ -4271,11 +4271,16 @@
         const reviews = getGuideReviews();
         host.innerHTML = '';
         if (!reviews.length) {
-            host.innerHTML = '<div class="empty-state">No reviews yet.</div>';
+            host.innerHTML = '<div class="dash-empty-state"><i class="fa-regular fa-star"></i><p>No reviews yet.</p></div>';
             return;
         }
 
-        reviews.forEach(function (review) {
+        const latestReviews = reviews.slice().sort(function (a, b) {
+            return (Date.parse(String(b.bookedDate || '')) || 0) - (Date.parse(String(a.bookedDate || '')) || 0);
+        }).slice(0, 5);
+
+        host.classList.add('d-grid', 'gap-2');
+        latestReviews.forEach(function (review) {
             const tour = tours[review.tourId];
             const relatedBooking = bookings.find(function (booking) {
                 return booking.tourId === review.tourId && String(booking.touristName || '').trim().toLowerCase() === String(review.reviewer || '').trim().toLowerCase();
@@ -4285,21 +4290,157 @@
                 '/images/manila.jpg'
             );
             const listingTitle = tour ? tour.title : String(review.listingTitle || 'Tour Listing');
-            const bookedDateText = relatedBooking
-                ? escapeHtml(formatDate(relatedBooking.bookingDate)) + ' • ' + escapeHtml(relatedBooking.guests || '1 guest')
-                : (review.bookedDate ? escapeHtml(formatDate(review.bookedDate)) + ' • ' + escapeHtml(review.guests || '1 guest') : 'Not available');
+            const stars = '★'.repeat(Math.max(1, Math.min(5, Number(review.rating || 0)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Number(review.rating || 0))));
+            const commentPreview = String(review.comment || '').length > 100 ? String(review.comment).slice(0, 97) + '…' : String(review.comment || '');
             const row = document.createElement('article');
-            row.className = 'settings-card dashboard-review-card';
+            row.className = 'settings-card';
+            row.style.cssText = 'padding:12px 14px;';
             row.innerHTML = [
-                '<p class="small text-muted mb-1">Booked Listing</p>',
-                '<p class="mb-1"><strong>', escapeHtml(listingTitle), '</strong></p>',
-                '<p class="small mb-1 d-flex align-items-center gap-2"><img src="', escapeHtml(reviewerAvatar), '" alt="', escapeHtml(review.reviewer), '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">Tourist: ', escapeHtml(review.reviewer), '</p>',
-                '<p class="small mb-1">Rating: <strong>', '★'.repeat(Math.max(1, Math.min(5, Number(review.rating || 0)))), '</strong></p>',
-                '<p class="small text-muted mb-2">Booked date: ' + bookedDateText + '</p>',
-                '<p class="small text-muted mb-0">', escapeHtml(review.comment), '</p>'
+                '<div class="d-flex align-items-center gap-2 mb-1">',
+                '<img src="', escapeHtml(reviewerAvatar), '" alt="', escapeHtml(review.reviewer), '" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                '<div>',
+                '<strong class="d-block" style="font-size:0.9rem;">', escapeHtml(review.reviewer), '</strong>',
+                '<span class="text-muted" style="font-size:0.78rem;">', escapeHtml(listingTitle), '</span>',
+                '</div>',
+                '<span class="ms-auto" style="color:#d97706;font-size:0.85rem;letter-spacing:1px;">', escapeHtml(stars), '</span>',
+                '</div>',
+                commentPreview ? '<p class="mb-0 small text-muted" style="padding-left:46px;">' + escapeHtml(commentPreview) + '</p>' : ''
             ].join('');
             host.appendChild(row);
         });
+    }
+
+    function collectTourRequestTransactions() {
+        const transactions = getSimulatedPaymentTransactions().filter(function (item) {
+            return item && typeof item === 'object';
+        });
+        const paymentStateMap = getChatPaymentStateMap();
+        Object.keys(paymentStateMap).forEach(function (key) {
+            const state = paymentStateMap[key];
+            if (!state || typeof state !==  'object' || !(Number(state.amount || 0) > 0)) { return; }
+            const status = String(state.status || '').toLowerCase();
+            if (status !== 'paid' && status !== 'pending_cash_on_tour') { return; }
+            const requestId = String(state.requestId || '').trim();
+            const conversationId = String(state.conversationId || key || '').trim();
+            const matchIndex = transactions.findIndex(function (item) {
+                if (!item || typeof item !== 'object') { return false; }
+                if (requestId && String(item.requestId || '').trim() === requestId) { return true; }
+                if (conversationId && String(item.conversationId || '').trim() === conversationId) { return true; }
+                return false;
+            });
+            const normalized = {
+                id: String(state.id || ('pay-state-' + conversationId)),
+                conversationId: conversationId,
+                requestId: requestId,
+                guideId: String(state.guideId || ''),
+                guideName: String(state.guideName || 'Guide'),
+                touristName: String(state.touristName || 'Tourist'),
+                touristAvatar: (function () {
+                    // Prefer avatar from matched transaction (set by tourist during payment)
+                    if (matchIndex >= 0 && transactions[matchIndex] && transactions[matchIndex].touristAvatar) {
+                        return normalizeAssetPath(transactions[matchIndex].touristAvatar, '/images/manila.jpg');
+                    }
+                    // Fall back to conversation avatar
+                    const convos = readStore(GUIDE_CONVERSATIONS_KEY, []);
+                    const convo = (Array.isArray(convos) ? convos : []).find(function (c) {
+                        if (conversationId && String(c.id || '') === conversationId) { return true; }
+                        if (requestId && String(c.tourRequestId || '') === requestId) { return true; }
+                        return false;
+                    });
+                    return normalizeAssetPath((convo && convo.avatar) || (state.touristAvatar || ''), '/images/manila.jpg');
+                })(),
+                tourTitle: String(state.tourTitle || 'Tour request'),
+                amount: Math.max(0, Number(state.amount || 0)),
+                paymentMethod: String(state.paymentMethod || 'N/A'),
+                status: status,
+                paidAt: status === 'paid' ? String(state.paidAt || state.updatedAt || nowISO()) : null,
+                date: String(state.updatedAt || state.paidAt || state.pendingAt || nowISO()),
+                updatedAt: String(state.updatedAt || nowISO()),
+                createdAt: String(state.createdAt || state.updatedAt || nowISO())
+            };
+            if (matchIndex >= 0) {
+                transactions[matchIndex] = Object.assign({}, transactions[matchIndex], normalized);
+            } else {
+                transactions.push(normalized);
+            }
+        });
+        transactions.sort(function (a, b) {
+            const left = Date.parse(String((a && (a.paidAt || a.date || a.updatedAt || a.createdAt)) || '')) || 0;
+            const right = Date.parse(String((b && (b.paidAt || b.date || b.updatedAt || b.createdAt)) || '')) || 0;
+            return right - left;
+        });
+        return transactions;
+    }
+
+    function collectAllEarningsTransactions() {
+        // Tour request payments (chat-based custom tour requests)
+        const requestTxs = collectTourRequestTransactions();
+
+        // Tour listing booking transactions (synthesized from bookings × tour price)
+        const tours = getGuideTours();
+        const tourMap = tours.reduce(function (acc, t) { acc[t.id] = t; return acc; }, {});
+        const bookings = getGuideBookings();
+        const listingTxs = bookings
+            .filter(function (bk) { return isBookedStatus(bk && bk.status); })
+            .map(function (bk) {
+                const tour = tourMap[bk.tourId];
+                const price = tour ? Number(tour.price || 0) : 0;
+                const guests = parseGuestCount(bk.guests);
+                // Prefer DB-stored total_amount (captured from API); fall back to price × guests
+                const amount = Number(bk.amount || 0) || (price * guests);
+                return {
+                    id: 'listing-' + String(bk.id),
+                    type: 'listing',
+                    touristName: String(bk.touristName || 'Tourist'),
+                    touristAvatar: normalizeAssetPath(bk.touristAvatar, '/images/manila.jpg'),
+                    tourTitle: tour ? String(tour.title || 'Tour Listing') : 'Tour Listing',
+                    amount: amount,
+                    paymentMethod: 'Tour Booking',
+                    status: 'paid',
+                    paidAt: bk.bookingDate || null,
+                    date: bk.bookingDate || nowISO(),
+                    updatedAt: bk.bookingDate || nowISO(),
+                    createdAt: bk.bookingDate || nowISO()
+                };
+            });
+
+        const all = listingTxs.concat(requestTxs);
+        all.sort(function (a, b) {
+            const left = Date.parse(String((a && (a.paidAt || a.date || a.updatedAt || a.createdAt)) || '')) || 0;
+            const right = Date.parse(String((b && (b.paidAt || b.date || b.updatedAt || b.createdAt)) || '')) || 0;
+            return right - left;
+        });
+        return all;
+    }
+
+    function normalizeDashboardBooking(item) {
+        const source = item && typeof item === 'object' ? item : {};
+        const guestCount = Math.max(1, Number(source.guestCount || source.guests || 1));
+        return {
+            id: String(source.id || uid('booking')),
+            tourId: source.tourId ? String(source.tourId) : '',
+            touristName: String(source.touristName || 'Tourist'),
+            touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
+            bookingDate: source.bookingDate || null,
+            guests: String(source.guests || (guestCount + ' guest' + (guestCount > 1 ? 's' : ''))),
+            status: String(source.statusRaw || source.status || 'pending').trim().toLowerCase(),
+            amount: Math.max(0, Number(source.total || source.amount || 0))
+        };
+    }
+
+    function normalizeDashboardReview(item) {
+        const source = item && typeof item === 'object' ? item : {};
+        return {
+            id: String(source.id || uid('review')),
+            tourId: String(source.tourId || ''),
+            listingTitle: String(source.listingTitle || 'Tour Listing'),
+            reviewer: String(source.reviewer || 'Tourist'),
+            reviewerAvatar: normalizeAssetPath(source.reviewerAvatar || source.touristAvatar || source.avatar, '/images/manila.jpg'),
+            rating: Math.max(1, Math.min(5, Number(source.rating || 0))),
+            comment: String(source.comment || ''),
+            bookedDate: source.bookedDate || null,
+            guests: String(source.guests || '1 guest')
+        };
     }
 
     function initDashboardPage() {
@@ -4307,43 +4448,15 @@
             return;
         }
 
-        function normalizeDashboardBooking(item) {
-            const source = item && typeof item === 'object' ? item : {};
-            const guestCount = Math.max(1, Number(source.guestCount || source.guests || 1));
-            return {
-                id: String(source.id || uid('booking')),
-                tourId: source.tourId ? String(source.tourId) : '',
-                touristName: String(source.touristName || 'Tourist'),
-                touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
-                bookingDate: source.bookingDate || null,
-                guests: String(source.guests || (guestCount + ' guest' + (guestCount > 1 ? 's' : ''))),
-                status: String(source.statusRaw || source.status || 'pending').trim().toLowerCase()
-            };
-        }
-
-        function normalizeDashboardReview(item) {
-            const source = item && typeof item === 'object' ? item : {};
-            return {
-                id: String(source.id || uid('review')),
-                tourId: String(source.tourId || ''),
-                listingTitle: String(source.listingTitle || 'Tour Listing'),
-                reviewer: String(source.reviewer || 'Tourist'),
-                reviewerAvatar: normalizeAssetPath(source.reviewerAvatar || source.touristAvatar || source.avatar, '/images/manila.jpg'),
-                rating: Math.max(1, Math.min(5, Number(source.rating || 0))),
-                comment: String(source.comment || ''),
-                bookedDate: source.bookedDate || null,
-                guests: String(source.guests || '1 guest')
-            };
-        }
-
         function renderStatsFromSnapshot(statsSnapshot) {
             const tours = getGuideTours();
             const bookings = getGuideBookings();
             const reviews = getGuideReviews();
-            const tourMap = tours.reduce(function (acc, tour) {
-                acc[tour.id] = tour;
-                return acc;
-            }, {});
+
+            // Total earnings = ALL paid transactions (tour listings + tour requests)
+            const totalEarnings = collectAllEarningsTransactions()
+                .filter(function (t) { return String(t.status || '').toLowerCase() === 'paid'; })
+                .reduce(function (sum, t) { return sum + Math.max(0, Number(t.amount || 0)); }, 0);
 
             const fallback = {
                 my_tours: tours.length,
@@ -4353,16 +4466,7 @@
                 accepted: bookings.filter(function (booking) {
                     return isBookedStatus(booking.status);
                 }).length,
-                total_earnings: bookings.reduce(function (sum, booking) {
-                    if (!isBookedStatus(booking && booking.status)) {
-                        return sum;
-                    }
-                    const tour = tourMap[booking.tourId];
-                    if (!tour) {
-                        return sum;
-                    }
-                    return sum + (Number(tour.price || 0) * parseGuestCount(booking.guests));
-                }, 0),
+                total_earnings: totalEarnings,
                 average_rating: reviews.length
                     ? Number((reviews.reduce(function (sum, review) {
                         return sum + Number(review.rating || 0);
@@ -4371,7 +4475,10 @@
             };
 
             const stats = statsSnapshot && typeof statsSnapshot === 'object'
-                ? Object.assign({}, fallback, statsSnapshot)
+                ? Object.assign({}, fallback, statsSnapshot, {
+                    // Always use our computed total (both listing + request) — DB value is incomplete
+                    total_earnings: totalEarnings
+                  })
                 : fallback;
 
             const statTours = qs('#statTours');
@@ -4404,67 +4511,7 @@
                 return;
             }
 
-            const transactions = getSimulatedPaymentTransactions()
-                .filter(function (item) {
-                    return item && typeof item === 'object';
-                });
-
-            const paymentStateMap = getChatPaymentStateMap();
-            Object.keys(paymentStateMap).forEach(function (key) {
-                const state = paymentStateMap[key];
-                if (!state || typeof state !== 'object' || !(Number(state.amount || 0) > 0)) {
-                    return;
-                }
-
-                const status = String(state.status || '').toLowerCase();
-                if (status !== 'paid' && status !== 'pending_cash_on_tour') {
-                    return;
-                }
-
-                const requestId = String(state.requestId || '').trim();
-                const conversationId = String(state.conversationId || key || '').trim();
-                const matchIndex = transactions.findIndex(function (item) {
-                    if (!item || typeof item !== 'object') {
-                        return false;
-                    }
-                    if (requestId && String(item.requestId || '').trim() === requestId) {
-                        return true;
-                    }
-                    if (conversationId && String(item.conversationId || '').trim() === conversationId) {
-                        return true;
-                    }
-                    return false;
-                });
-
-                const normalized = {
-                    id: String(state.id || ('pay-state-' + conversationId)),
-                    conversationId: conversationId,
-                    requestId: requestId,
-                    guideId: String(state.guideId || ''),
-                    guideName: String(state.guideName || 'Guide'),
-                    touristName: 'Tourist',
-                    tourTitle: String(state.tourTitle || 'Tour request'),
-                    amount: Math.max(0, Number(state.amount || 0)),
-                    paymentMethod: String(state.paymentMethod || 'N/A'),
-                    status: status,
-                    paidAt: status === 'paid' ? String(state.paidAt || state.updatedAt || nowISO()) : null,
-                    date: String(state.updatedAt || state.paidAt || state.pendingAt || nowISO()),
-                    updatedAt: String(state.updatedAt || nowISO()),
-                    createdAt: String(state.createdAt || state.updatedAt || nowISO())
-                };
-
-                if (matchIndex >= 0) {
-                    transactions[matchIndex] = Object.assign({}, transactions[matchIndex], normalized);
-                } else {
-                    transactions.push(normalized);
-                }
-            });
-
-            transactions.sort(function (a, b) {
-                const left = Date.parse(String((a && (a.paidAt || a.date || a.updatedAt || a.createdAt)) || '')) || 0;
-                const right = Date.parse(String((b && (b.paidAt || b.date || b.updatedAt || b.createdAt)) || '')) || 0;
-                return right - left;
-            });
+            const transactions = collectTourRequestTransactions();
 
             const paidTransactions = transactions.filter(function (item) {
                 return String(item.status || '').toLowerCase() === 'paid';
@@ -4483,21 +4530,16 @@
             }
 
             if (!transactions.length) {
-                listNode.innerHTML = '<div class="simulated-transaction-empty">No payment transactions yet.</div>';
+                listNode.innerHTML = '<div class="dash-empty-state"><i class="fa-solid fa-receipt"></i><p>No tour request payments yet.</p></div>';
                 return;
             }
 
             const conversationAvatarById = new Map();
             const storedConversations = readStore(GUIDE_CONVERSATIONS_KEY, []);
             (Array.isArray(storedConversations) ? storedConversations : []).forEach(function (conversation) {
-                if (!conversation || typeof conversation !== 'object') {
-                    return;
-                }
-                const conversationId = String(conversation.id || '').trim();
-                if (!conversationId) {
-                    return;
-                }
-                conversationAvatarById.set(conversationId, normalizeAssetPath(conversation.avatar, '/images/manila.jpg'));
+                if (!conversation || typeof conversation !== 'object') { return; }
+                const cid = String(conversation.id || '').trim();
+                if (cid) { conversationAvatarById.set(cid, normalizeAssetPath(conversation.avatar, '/images/manila.jpg')); }
             });
 
             listNode.innerHTML = transactions.map(function (item) {
@@ -4505,11 +4547,12 @@
                 const method = String(item.paymentMethod || 'N/A');
                 const tourist = String(item.touristName || 'Tourist');
                 const title = String(item.tourTitle || 'Tour request');
-                const status = String(item.status || '').toLowerCase() === 'paid' ? 'PAID' : 'Pending (Cash on Tour)';
-                const statusClass = String(item.status || '').toLowerCase() === 'paid' ? 'paid' : 'pending';
-                const conversationId = String(item.conversationId || '').trim();
-                const avatarSource = item.touristAvatar || item.avatar || (conversationId ? conversationAvatarById.get(conversationId) : null) || '/images/manila.jpg';
-                const avatar = normalizeAssetPath(avatarSource, '/images/manila.jpg');
+                const isPaid = String(item.status || '').toLowerCase() === 'paid';
+                const status = isPaid ? 'PAID' : 'Pending (Cash on Tour)';
+                const statusClass = isPaid ? 'paid' : 'pending';
+                const cid = String(item.conversationId || '').trim();
+                const avatarSrc = item.touristAvatar || item.avatar || (cid ? conversationAvatarById.get(cid) : null) || '/images/manila.jpg';
+                const avatar = normalizeAssetPath(avatarSrc, '/images/manila.jpg');
                 const rawDate = String(item.paidAt || item.date || item.updatedAt || item.createdAt || '');
                 const parsedDate = rawDate ? new Date(rawDate) : null;
                 const dateLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -4542,6 +4585,18 @@
 
         renderDashboard();
 
+        qsa('[data-stat-href]').forEach(function (card) {
+            card.addEventListener('click', function () {
+                window.location.href = card.dataset.statHref;
+            });
+            card.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    window.location.href = card.dataset.statHref;
+                }
+            });
+        });
+
         Promise.allSettled([
             apiRequest('/guide/tours'),
             apiRequest('/guide/booking-requests'),
@@ -4570,9 +4625,214 @@
 
         window.addEventListener('storage', function (event) {
             if (event && (event.key === CHAT_PAYMENT_TRANSACTIONS_KEY || event.key === CHAT_PAYMENT_STATE_KEY)) {
-                renderSimulatedEarningsPanel();
+                renderDashboard();
             }
         });
+
+        window.setInterval(renderDashboard, 30000);
+    }
+
+    function initEarningsBreakdownPage() {
+        if (document.body.dataset.page !== 'guide-earnings-breakdown') { return; }
+        const listNode = qs('#earningsBreakdownList');
+        const totalNode = qs('#earningsBreakdownTotal');
+
+        function render() {
+            const transactions = collectAllEarningsTransactions();
+            const conversationAvatarById = new Map();
+            const storedConversations = readStore(GUIDE_CONVERSATIONS_KEY, []);
+            (Array.isArray(storedConversations) ? storedConversations : []).forEach(function (c) {
+                if (!c || typeof c !== 'object') { return; }
+                const cid = String(c.id || '').trim();
+                if (cid) { conversationAvatarById.set(cid, normalizeAssetPath(c.avatar, '/images/manila.jpg')); }
+            });
+
+            const paidTotal = transactions.filter(function (t) {
+                return String(t.status || '').toLowerCase() === 'paid';
+            }).reduce(function (sum, t) { return sum + Math.max(0, Number(t.amount || 0)); }, 0);
+
+            if (totalNode) { totalNode.textContent = formatSimulatedPeso(paidTotal); }
+
+            if (!listNode) { return; }
+            if (!transactions.length) {
+                listNode.innerHTML = '<div class="dash-empty-state"><i class="fa-solid fa-coins"></i><p>No earnings yet.</p></div>';
+                return;
+            }
+
+            listNode.innerHTML = transactions.map(function (item) {
+                const amount = formatSimulatedPeso(Number(item.amount || 0));
+                const method = String(item.paymentMethod || 'N/A');
+                const tourist = String(item.touristName || 'Tourist');
+                const title = String(item.tourTitle || 'Tour request');
+                const isPaid = String(item.status || '').toLowerCase() === 'paid';
+                const statusLabel = isPaid ? 'PAID' : 'Pending (Cash on Tour)';
+                const statusClass = isPaid ? 'paid' : 'pending';
+                const cid = String(item.conversationId || '').trim();
+                const avatarSrc = item.touristAvatar || item.avatar || (cid ? conversationAvatarById.get(cid) : null) || '/images/manila.jpg';
+                const avatar = normalizeAssetPath(avatarSrc, '/images/manila.jpg');
+                const rawDate = String(item.paidAt || item.date || item.updatedAt || item.createdAt || '');
+                const parsedDate = rawDate ? new Date(rawDate) : null;
+                const dateLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
+                    ? parsedDate.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : 'Unknown time';
+                const isListing = item.type === 'listing';
+
+                return [
+                    '<article class="simulated-transaction-row">',
+                    '<div class="simulated-transaction-main">',
+                    '<img class="simulated-transaction-avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(tourist), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                    '<div class="simulated-transaction-content">',
+                    '<strong class="simulated-transaction-name">', escapeHtml(tourist), '</strong>',
+                    '<div class="simulated-transaction-title meta"><strong>', escapeHtml(title), '</strong>',
+                    isListing ? ' <span class="meta">(Tour Listing)</span>' : ' <span class="meta">(Tour Request)</span>',
+                    '</div>',
+                    '<div class="simulated-transaction-status-line"><span class="chat-payment-badge ', statusClass, '">', escapeHtml(statusLabel), '</span></div>',
+                    '<div class="simulated-transaction-date meta">', escapeHtml(dateLabel), '</div>',
+                    '<div class="simulated-transaction-amount-line"><span class="amount">', escapeHtml(amount), '</span><span class="meta"> · </span><span class="method">', escapeHtml(method), '</span></div>',
+                    '</div>',
+                    '</div>',
+                    '</article>'
+                ].join('');
+            }).join('');
+        }
+
+        // Show cached data immediately, then refresh from API so listing amounts are accurate
+        render();
+        Promise.allSettled([
+            apiRequest('/guide/tours'),
+            apiRequest('/guide/booking-requests')
+        ]).then(function (results) {
+            const toursPayload = results[0] && results[0].status === 'fulfilled' ? results[0].value : null;
+            const bookingsPayload = results[1] && results[1].status === 'fulfilled' ? results[1].value : null;
+            if (toursPayload && Array.isArray(toursPayload.listings)) {
+                setGuideTours(toursPayload.listings.map(mapApiListingToGuideTour));
+            }
+            if (bookingsPayload && Array.isArray(bookingsPayload.bookings)) {
+                setGuideBookings(bookingsPayload.bookings.map(normalizeDashboardBooking));
+            }
+            render();
+        });
+
+        window.addEventListener('storage', function (event) {
+            if (event && (event.key === CHAT_PAYMENT_TRANSACTIONS_KEY || event.key === CHAT_PAYMENT_STATE_KEY)) { render(); }
+        });
+        window.setInterval(render, 30000);
+    }
+
+    function initTourRequestPaymentsPage() {
+        if (document.body.dataset.page !== 'guide-request-payments') { return; }
+        const listNode = qs('#requestPaymentsList');
+
+        function render() {
+            const transactions = collectTourRequestTransactions();
+            const conversationAvatarById = new Map();
+            const storedConversations = readStore(GUIDE_CONVERSATIONS_KEY, []);
+            (Array.isArray(storedConversations) ? storedConversations : []).forEach(function (c) {
+                if (!c || typeof c !== 'object') { return; }
+                const cid = String(c.id || '').trim();
+                if (cid) { conversationAvatarById.set(cid, normalizeAssetPath(c.avatar, '/images/manila.jpg')); }
+            });
+
+            if (!listNode) { return; }
+            if (!transactions.length) {
+                listNode.innerHTML = '<div class="dash-empty-state"><i class="fa-solid fa-file-invoice-dollar"></i><p>No tour request payments yet.</p></div>';
+                return;
+            }
+
+            listNode.innerHTML = transactions.map(function (item) {
+                const amount = formatSimulatedPeso(Number(item.amount || 0));
+                const method = String(item.paymentMethod || 'N/A');
+                const tourist = String(item.touristName || 'Tourist');
+                const title = String(item.tourTitle || 'Tour request');
+                const isPaid = String(item.status || '').toLowerCase() === 'paid';
+                const statusLabel = isPaid ? 'PAID' : 'Pending (Cash on Tour)';
+                const statusClass = isPaid ? 'paid' : 'pending';
+                const cid = String(item.conversationId || '').trim();
+                const avatarSrc = item.touristAvatar || item.avatar || (cid ? conversationAvatarById.get(cid) : null) || '/images/manila.jpg';
+                const avatar = normalizeAssetPath(avatarSrc, '/images/manila.jpg');
+                const rawDate = String(item.paidAt || item.date || item.updatedAt || item.createdAt || '');
+                const parsedDate = rawDate ? new Date(rawDate) : null;
+                const dateLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
+                    ? parsedDate.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : 'Unknown time';
+
+                return [
+                    '<article class="simulated-transaction-row">',
+                    '<div class="simulated-transaction-main">',
+                    '<img class="simulated-transaction-avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(tourist), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                    '<div class="simulated-transaction-content">',
+                    '<strong class="simulated-transaction-name">', escapeHtml(tourist), '</strong>',
+                    '<div class="simulated-transaction-title meta"><strong>', escapeHtml(title), '</strong></div>',
+                    '<div class="simulated-transaction-status-line"><span class="chat-payment-badge ', statusClass, '">', escapeHtml(statusLabel), '</span></div>',
+                    '<div class="simulated-transaction-date meta">', escapeHtml(dateLabel), '</div>',
+                    '<div class="simulated-transaction-amount-line"><span class="amount">', escapeHtml(amount), '</span><span class="meta"> · </span><span class="method">', escapeHtml(method), '</span></div>',
+                    '</div>',
+                    '</div>',
+                    '</article>'
+                ].join('');
+            }).join('');
+        }
+
+        render();
+        window.addEventListener('storage', function (event) {
+            if (event && (event.key === CHAT_PAYMENT_TRANSACTIONS_KEY || event.key === CHAT_PAYMENT_STATE_KEY)) { render(); }
+        });
+        window.setInterval(render, 30000);
+    }
+
+    function initGuideReviewsPage() {
+        if (document.body.dataset.page !== 'guide-reviews') { return; }
+        const listNode = qs('#guideReviewsFullList');
+
+        function render() {
+            const tours = getGuideTours().reduce(function (acc, tour) { acc[tour.id] = tour; return acc; }, {});
+            const bookings = getGuideBookings();
+            const reviews = getGuideReviews();
+            if (!listNode) { return; }
+            if (!reviews.length) {
+                listNode.innerHTML = '<div class="dash-empty-state"><i class="fa-regular fa-star"></i><p>No reviews yet.</p></div>';
+                return;
+            }
+
+            const sorted = reviews.slice().sort(function (a, b) {
+                return (Date.parse(String(b.bookedDate || '')) || 0) - (Date.parse(String(a.bookedDate || '')) || 0);
+            });
+
+            listNode.innerHTML = '<div class="d-grid gap-2">' + sorted.map(function (review) {
+                const tour = tours[review.tourId];
+                const relatedBooking = bookings.find(function (bk) {
+                    return bk.tourId === review.tourId && String(bk.touristName || '').trim().toLowerCase() === String(review.reviewer || '').trim().toLowerCase();
+                });
+                const reviewerAvatar = normalizeAssetPath(
+                    review.reviewerAvatar || review.touristAvatar || (relatedBooking && relatedBooking.touristAvatar),
+                    '/images/manila.jpg'
+                );
+                const listingTitle = tour ? tour.title : String(review.listingTitle || 'Tour Listing');
+                const stars = '★'.repeat(Math.max(1, Math.min(5, Number(review.rating || 0)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Number(review.rating || 0))));
+                const bookedDateText = relatedBooking
+                    ? escapeHtml(formatDate(relatedBooking.bookingDate)) + ' · ' + escapeHtml(relatedBooking.guests || '1 guest')
+                    : (review.bookedDate ? escapeHtml(formatDate(review.bookedDate)) : 'N/A');
+                return [
+                    '<article class="settings-card" style="padding:14px 16px;">',
+                    '<div class="d-flex align-items-center gap-2 mb-2">',
+                    '<img src="', escapeHtml(reviewerAvatar), '" alt="', escapeHtml(review.reviewer), '" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                    '<div class="flex-1">',
+                    '<strong class="d-block">', escapeHtml(review.reviewer), '</strong>',
+                    '<span class="text-muted small">', escapeHtml(listingTitle), '</span>',
+                    '</div>',
+                    '<div class="ms-auto text-end">',
+                    '<div style="color:#d97706;font-size:0.9rem;">', escapeHtml(stars), '</div>',
+                    '<div class="text-muted small">', bookedDateText, '</div>',
+                    '</div>',
+                    '</div>',
+                    review.comment ? '<p class="mb-0 small" style="padding-left:52px;">' + escapeHtml(String(review.comment)) + '</p>' : '',
+                    '</article>'
+                ].join('');
+            }).join('') + '</div>';
+        }
+
+        render();
+        window.setInterval(render, 30000);
     }
 
     function initGlobalActions() {
@@ -4642,6 +4902,9 @@
         runInitStep('notifications', initGuideNotifications);
 
         runInitStep('dashboard-page', initDashboardPage);
+        runInitStep('earnings-breakdown-page', initEarningsBreakdownPage);
+        runInitStep('request-payments-page', initTourRequestPaymentsPage);
+        runInitStep('guide-reviews-page', initGuideReviewsPage);
         runInitStep('request-feed-page', initRequestPostFeedPage);
         runInitStep('booking-requests-page', initBookingRequestsPage);
         runInitStep('tours-page', initToursPage);

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guide Dashboard | Tribaltours</title>
+    <title>Tour Request Payments | Tribaltours Guide</title>
     <link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}">
     <link href="https://fonts.cdnfonts.com/css/maragsa" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
 </head>
-<body class="account-page" data-page="guide-dashboard" data-require-auth="true">
+<body class="account-page" data-page="guide-request-payments" data-require-auth="true">
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="app-root">
         <aside class="sidebar" id="sidebar">
@@ -74,67 +74,24 @@
             </header>
 
             <main class="content-wrap">
-                <section class="page-header">
-                    <h1 class="guide-page-title">Dashboard</h1>
-                </section>
-
-                <section class="stats-row guide-dashboard-stats">
-                    <article class="stat-card stat-card-clickable" data-stat-href="{{ route('guide.tours.index') }}" tabindex="0" role="button" aria-label="Go to My Tours">
-                        <p class="text-muted small">My Tours</p>
-                        <p id="statTours" class="value">0</p>
-                    </article>
-                    <article class="stat-card stat-card-clickable" data-stat-href="{{ route('guide.booking-requests.index') }}?filter=pending" tabindex="0" role="button" aria-label="Go to Pending Requests">
-                        <p class="text-muted small">Pending Requests</p>
-                        <p id="statPending" class="value" style="color:#1f5fa6;">0</p>
-                    </article>
-                    <article class="stat-card stat-card-clickable" data-stat-href="{{ route('guide.booking-requests.index') }}?filter=accepted" tabindex="0" role="button" aria-label="Go to Accepted Bookings">
-                        <p class="text-muted small">Accepted</p>
-                        <p id="statAccepted" class="value" style="color:#477131;">0</p>
-                    </article>
-                    <article class="stat-card">
-                        <p class="text-muted small">Total Earnings</p>
-                        <p id="statEarnings" class="value" style="color:#0f766e;">₱0</p>
-                        <a href="{{ route('guide.earnings-breakdown') }}" class="stat-see-more">See More <i class="fa-solid fa-angle-right"></i></a>
-                    </article>
-                    <article class="stat-card">
-                        <p class="text-muted small">Average Rating</p>
-                        <p id="statRating" class="value" style="color:#8f6512;">0.0</p>
-                    </article>
+                <section class="page-header d-flex align-items-center gap-3 mb-3">
+                    <a href="{{ route('guide.dashboard') }}" class="btn btn-light btn-sm"><i class="fa-solid fa-arrow-left"></i></a>
+                    <div>
+                        <h1 class="guide-page-title mb-0">Tour Request Payments</h1>
+                        <p class="text-muted mb-0 small">All tour request payment records</p>
+                    </div>
                 </section>
 
                 <section class="guide-layout-grid">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <h2 class="h4 mb-0">Tour Booked by Tourists</h2>
-                        <a href="{{ route('guide.booking-requests.index') }}" class="btn-soft">Open Booking Requests</a>
-                    </div>
-                    <div id="dashboardPendingList" class="bookings-grid"></div>
-                </section>
-
-                <section class="guide-layout-grid mt-3">
-                    <article class="settings-card simulated-earnings-card">
-                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                            <div>
-                                <h2 class="h5 mb-0">Tour Request Earnings</h2>
-                                <div class="guide-earnings-owner mt-2">
-                                    <img src="{{ asset('images/manila.jpg') }}" alt="Guide profile photo" class="guide-earnings-avatar" data-guide-earnings-avatar>
-                                    <span class="guide-earnings-name" data-guide-earnings-name>Tour Guide</span>
-                                </div>
-                            </div>
-                            <div class="d-flex flex-column align-items-end gap-2">
-                                <div class="simulated-earnings-total" id="simulatedEarningsValue">₱0.00</div>
-                                <a href="{{ route('guide.request-payments') }}" class="dash-view-more">View More <i class="fa-solid fa-angle-right"></i></a>
+                    <article class="settings-card">
+                        <div id="requestPaymentsList" class="simulated-transaction-list">
+                            <div class="dash-skeleton-list">
+                                <div class="dash-skeleton-row"></div>
+                                <div class="dash-skeleton-row"></div>
+                                <div class="dash-skeleton-row"></div>
                             </div>
                         </div>
-                        <div id="simulatedTransactionList" class="simulated-transaction-list"></div>
                     </article>
-                </section>
-
-                <section class="guide-layout-grid mt-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h2 class="h4 mb-0">Tourist Reviews</h2>
-                        <a href="{{ route('guide.reviews') }}" class="dash-view-more">View More <i class="fa-solid fa-angle-right"></i></a>
-                    </div>
-                    <div id="dashboardReviewList" class="guide-layout-grid"></div>
                 </section>
             </main>
         </div>
