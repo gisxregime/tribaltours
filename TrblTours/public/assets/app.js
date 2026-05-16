@@ -12,6 +12,9 @@
     const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
     const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
     const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
+    const CHAT_PAYMENT_STATE_KEY = 'tribaltours_chat_payment_state_v1';
+    const CHAT_PAYMENT_TRANSACTIONS_KEY = 'tribaltours_chat_payment_transactions_v1';
+    const CHAT_SIMULATED_EVENTS_KEY = 'tribaltours_chat_simulated_events_v1';
     const GUIDE_STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
     const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
     const REQUEST_DEFAULT_REGION = 'Davao del Norte';
@@ -219,6 +222,14 @@
 
     function qsa(selector, scope) {
         return Array.from((scope || document).querySelectorAll(selector));
+    }
+
+    function uid(prefix) {
+        return String(prefix || 'id') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    }
+
+    function nowISO() {
+        return new Date().toISOString();
     }
 
     function currentRole() {
@@ -768,6 +779,225 @@
         localStorage.setItem(GUIDE_CONVERSATIONS_KEY, JSON.stringify(safeList));
     }
 
+    function getChatPaymentStateMap() {
+        const parsed = parseJSON(localStorage.getItem(CHAT_PAYMENT_STATE_KEY), {});
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {};
+        }
+        return parsed;
+    }
+
+    function setChatPaymentStateMap(nextState) {
+        const safe = nextState && typeof nextState === 'object' && !Array.isArray(nextState)
+            ? nextState
+            : {};
+        localStorage.setItem(CHAT_PAYMENT_STATE_KEY, JSON.stringify(safe));
+    }
+
+    function getConversationPaymentState(conversationId) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return null;
+        }
+        const map = getChatPaymentStateMap();
+        const record = map[key];
+        return record && typeof record === 'object' ? record : null;
+    }
+
+    function saveConversationPaymentState(conversationId, patch) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return null;
+        }
+
+        const map = getChatPaymentStateMap();
+        const current = map[key] && typeof map[key] === 'object' ? map[key] : {};
+        map[key] = Object.assign({}, current, patch || {}, {
+            conversationId: key,
+            updatedAt: nowISO()
+        });
+        setChatPaymentStateMap(map);
+        return map[key];
+    }
+
+    function getRequestPaymentStateIndex() {
+        const map = getChatPaymentStateMap();
+        return Object.keys(map).reduce(function (acc, key) {
+            const state = map[key];
+            if (!state || typeof state !== 'object') {
+                return acc;
+            }
+            const requestId = String(state.requestId || '').trim();
+            if (!requestId) {
+                return acc;
+            }
+
+            const previous = acc[requestId];
+            const previousTime = Date.parse(String(previous && previous.updatedAt ? previous.updatedAt : '')) || 0;
+            const currentTime = Date.parse(String(state.updatedAt || '')) || 0;
+            if (!previous || currentTime >= previousTime) {
+                acc[requestId] = state;
+            }
+            return acc;
+        }, {});
+    }
+
+    function getSimulatedPaymentTransactions() {
+        const parsed = parseJSON(localStorage.getItem(CHAT_PAYMENT_TRANSACTIONS_KEY), []);
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function setSimulatedPaymentTransactions(list) {
+        const safeList = Array.isArray(list) ? list : [];
+        localStorage.setItem(CHAT_PAYMENT_TRANSACTIONS_KEY, JSON.stringify(safeList.slice(0, 300)));
+    }
+
+    function upsertSimulatedPaymentTransaction(record) {
+        if (!record || typeof record !== 'object') {
+            return;
+        }
+
+        const transactions = getSimulatedPaymentTransactions();
+        const conversationId = String(record.conversationId || '').trim();
+        const requestId = String(record.requestId || '').trim();
+        const matchIndex = transactions.findIndex(function (item) {
+            if (!item || typeof item !== 'object') {
+                return false;
+            }
+            if (conversationId && String(item.conversationId || '') === conversationId) {
+                return true;
+            }
+            if (requestId && String(item.requestId || '') === requestId) {
+                return true;
+            }
+            return false;
+        });
+
+        const normalized = Object.assign({}, record, {
+            id: String(record.id || uid('sim-txn')),
+            conversationId: conversationId,
+            requestId: requestId,
+            amount: Math.max(0, Number(record.amount || 0)),
+            updatedAt: nowISO(),
+            createdAt: String(record.createdAt || nowISO())
+        });
+
+        if (matchIndex >= 0) {
+            transactions[matchIndex] = Object.assign({}, transactions[matchIndex], normalized);
+        } else {
+            transactions.unshift(normalized);
+        }
+
+        setSimulatedPaymentTransactions(transactions);
+    }
+
+    function getSimulatedChatEvents() {
+        const parsed = parseJSON(localStorage.getItem(CHAT_SIMULATED_EVENTS_KEY), []);
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function setSimulatedChatEvents(list) {
+        const safeList = Array.isArray(list) ? list : [];
+        localStorage.setItem(CHAT_SIMULATED_EVENTS_KEY, JSON.stringify(safeList.slice(-400)));
+    }
+
+    function addSimulatedChatEvent(eventPayload) {
+        if (!eventPayload || typeof eventPayload !== 'object') {
+            return null;
+        }
+
+        const event = Object.assign({}, eventPayload, {
+            id: String(eventPayload.id || uid('sim-msg')),
+            conversationId: String(eventPayload.conversationId || ''),
+            text: String(eventPayload.text || '').trim(),
+            authorRole: String(eventPayload.authorRole || 'system').trim().toLowerCase() || 'system',
+            createdAt: String(eventPayload.createdAt || nowISO())
+        });
+
+        if (!event.conversationId || !event.text) {
+            return null;
+        }
+
+        const events = getSimulatedChatEvents();
+        const exists = events.some(function (item) {
+            return item && String(item.id || '') === event.id;
+        });
+        if (!exists) {
+            events.push(event);
+            setSimulatedChatEvents(events);
+        }
+        return event;
+    }
+
+    function getSimulatedChatEventsByConversation(conversationId) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return [];
+        }
+
+        return getSimulatedChatEvents()
+            .filter(function (item) {
+                return item && String(item.conversationId || '') === key;
+            })
+            .sort(function (a, b) {
+                const left = Date.parse(String((a && a.createdAt) || '')) || 0;
+                const right = Date.parse(String((b && b.createdAt) || '')) || 0;
+                return left - right;
+            });
+    }
+
+    function parseSimulatedAmount(value) {
+        const cleaned = String(value == null ? '' : value).replace(/[^0-9.]/g, '');
+        const amount = Number(cleaned);
+        if (!Number.isFinite(amount)) {
+            return 0;
+        }
+        return Math.max(0, Number(amount.toFixed(2)));
+    }
+
+    function formatSimulatedPeso(value) {
+        return '₱' + Number(value || 0).toLocaleString('en-PH', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    function sanitizePaymentCopy(value) {
+        return String(value || '')
+            .replace(/\s*\(simulated\)/ig, '')
+            .replace(/\bsimulated\b/ig, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
+    function updateTouristRequestPaymentSnapshot(requestId, payload) {
+        const key = String(requestId || '').trim();
+        if (!key) {
+            return;
+        }
+
+        const requests = parseJSON(localStorage.getItem(TOURIST_REQUESTS_KEY), []);
+        if (!Array.isArray(requests)) {
+            return;
+        }
+
+        const next = requests.map(function (item) {
+            if (!item || String(item.id || '') !== key) {
+                return item;
+            }
+            return Object.assign({}, item, {
+                simulatedPayment: {
+                    amount: Number(payload && payload.amount ? payload.amount : 0),
+                    method: String(payload && payload.paymentMethod ? payload.paymentMethod : ''),
+                    status: String(payload && payload.status ? payload.status : ''),
+                    updatedAt: String(payload && payload.updatedAt ? payload.updatedAt : nowISO())
+                }
+            });
+        });
+
+        localStorage.setItem(TOURIST_REQUESTS_KEY, JSON.stringify(next));
+    }
+
     function normalizeGuideAssetPath(path) {
         const value = String(path || '').trim();
         if (!value) {
@@ -1105,6 +1335,17 @@
 
     function closeDropdownByButtonId(buttonId) {
         const trigger = qs('#' + String(buttonId || ''));
+        if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        const instance = window.bootstrap.Dropdown.getInstance(trigger) || window.bootstrap.Dropdown.getOrCreateInstance(trigger);
+        instance.hide();
+    }
+
+    function closeContainingDropdown(element) {
+        const target = element && element.closest ? element.closest('.dropdown') : null;
+        const trigger = target ? qs('[data-bs-toggle="dropdown"]', target) : null;
         if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
             return;
         }
@@ -1524,6 +1765,63 @@
         ].join('');
     }
 
+    function inferTourRegionKey(tour) {
+        const blob = String(((tour && tour.location) || '') + ' ' + ((tour && tour.region) || '')).toLowerCase();
+        if (blob.indexOf('davao') !== -1 || blob.indexOf('mindanao') !== -1) {
+            return 'davao';
+        }
+        if (blob.indexOf('cebu') !== -1 || blob.indexOf('bohol') !== -1 || blob.indexOf('palawan') !== -1 || blob.indexOf('visayas') !== -1) {
+            return 'cebu';
+        }
+        return 'manila';
+    }
+
+    function renderTourFeedCardMarkup(tour, options) {
+        const entry = tour && typeof tour === 'object' ? tour : {};
+        const tags = Array.isArray(entry.tags) ? entry.tags : [];
+        const ref = String(
+            (options && options.tourRef != null ? options.tourRef : '')
+            || entry.id
+            || entry.slug
+            || entry.legacyKey
+            || ''
+        ).trim();
+        const id = String(entry.id || ref || '').trim();
+        const region = String((options && options.regionKey) || inferTourRegionKey(entry) || 'all').trim().toLowerCase();
+        const searchBlob = String((entry.title || '') + ' ' + (entry.location || '') + ' ' + tags.join(' ')).toLowerCase();
+
+        return [
+            '<article class="tour-card feed-item feed-item-db" data-db-tour="', escapeHtml(id), '" data-type="tour" data-region="', escapeHtml(region), '" data-price="', Number(entry.price || 0), '" data-latest="', Number(entry.latest || Date.now()), '" data-search="',
+            escapeHtml(searchBlob),
+            '">',
+            '<div class="relative tour-card-media">',
+            '<img src="', escapeHtml(entry.image || 'images/pangasinan.jpg'), '" alt="', escapeHtml(entry.title || 'Tour'), '" class="tour-card-cover h-48 w-full object-cover">',
+            '<div class="tour-card-badge absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">', escapeHtml(entry.badge || 'Guide Listing'), '</div>',
+            '<button class="like-save" type="button" data-like-id="', escapeHtml(id), '" aria-label="Save tour"></button>',
+            '</div>',
+            '<div class="tour-card-body flex flex-1 flex-col p-4">',
+            '<p class="tour-card-location text-xs text-stone-500">', escapeHtml(entry.location || 'Philippines'), '</p>',
+            '<h3 class="tour-card-title mt-1 line-clamp-2 text-xl font-semibold">', escapeHtml(entry.title || 'Custom Tour'), '</h3>',
+            '<div class="tour-card-guide mt-3 flex items-center gap-2 text-sm text-stone-700">',
+            '<img src="', escapeHtml(entry.guideAvatar || 'images/manila.jpg'), '" alt="Guide" class="tour-card-guide-avatar h-7 w-7 rounded-full object-cover">',
+            '<span class="tour-card-guide-name font-medium">', escapeHtml(entry.guide || entry.provider || 'Guide'), '</span>',
+            '<span class="tour-card-verified rounded-full bg-[#C7A34A]/20 px-2 py-0.5 text-xs font-semibold text-[#9A742A]">Verified</span>',
+            '</div>',
+            '<p class="tour-card-meta mt-2 text-sm text-stone-600">', Number(entry.rating || 0).toFixed(2), ' (', String(entry.reviews || 0), ') • ', escapeHtml(entry.duration || 'Flexible'), ' • ', escapeHtml(entry.pax || '1-10 pax'), ' • ', escapeHtml(entry.difficulty || 'Moderate'), '</p>',
+            '<div class="tour-card-tags mt-3 flex flex-wrap gap-1.5 text-xs">',
+            tags.slice(0, 4).map(function (tag) {
+                return '<span class="tour-card-tag rounded-full bg-stone-100 px-2 py-1 text-stone-600">' + escapeHtml(tag) + '</span>';
+            }).join(''),
+            '</div>',
+            '<div class="tour-card-footer mt-auto flex items-center justify-between border-t border-stone-200 pt-3">',
+            '<p class="tour-card-price text-3xl font-bold">₱', Number(entry.price || 0).toLocaleString(), ' <span class="text-sm font-medium text-stone-500">/ person</span></p>',
+            '<a href="/tour-preview?tour=', encodeURIComponent(ref), '" class="tour-card-view rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>',
+            '</div>',
+            '</div>',
+            '</article>'
+        ].join('');
+    }
+
     function initExplorePage() {
         const feed = qs('#feedCards');
         if (!feed) {
@@ -1628,48 +1926,11 @@
         let activeType = 'all';
         let activeRegion = 'all';
 
-        function inferRegionFromTour(tour) {
-            const blob = String((tour.location || '') + ' ' + (tour.region || '')).toLowerCase();
-            if (blob.indexOf('davao') !== -1 || blob.indexOf('mindanao') !== -1) {
-                return 'davao';
-            }
-            if (blob.indexOf('cebu') !== -1 || blob.indexOf('bohol') !== -1 || blob.indexOf('palawan') !== -1 || blob.indexOf('visayas') !== -1) {
-                return 'cebu';
-            }
-            return 'manila';
-        }
-
         function dbTourCardMarkup(tour) {
-            const tags = Array.isArray(tour.tags) ? tour.tags : [];
-            return [
-                '<article class="tour-card feed-item feed-item-db" data-db-tour="', escapeHtml(String(tour.id || '')), '" data-type="tour" data-region="', escapeHtml(inferRegionFromTour(tour)), '" data-price="', Number(tour.price || 0), '" data-latest="', Number(tour.latest || Date.now()), '" data-search="',
-                escapeHtml(String((tour.title || '') + ' ' + (tour.location || '') + ' ' + tags.join(' ')).toLowerCase()),
-                '">',
-                '<div class="relative">',
-                '<img src="', escapeHtml(tour.image || 'images/pangasinan.jpg'), '" alt="', escapeHtml(tour.title || 'Tour'), '" class="h-48 w-full object-cover">',
-                '<div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">', escapeHtml(tour.badge || 'Guide Listing'), '</div>',
-                '<button class="like-save" type="button" data-like-id="', escapeHtml(String(tour.id || '')), '" aria-label="Save tour"></button>',
-                '</div>',
-                '<div class="flex flex-1 flex-col p-4">',
-                '<p class="text-xs text-stone-500">', escapeHtml(tour.location || 'Philippines'), '</p>',
-                '<h3 class="mt-1 line-clamp-2 text-xl font-semibold">', escapeHtml(tour.title || 'Custom Tour'), '</h3>',
-                '<div class="mt-3 flex items-center gap-2 text-sm text-stone-700">',
-                '<img src="', escapeHtml(tour.guideAvatar || 'images/manila.jpg'), '" alt="Guide" class="h-7 w-7 rounded-full object-cover">',
-                '<span class="font-medium">', escapeHtml(tour.guide || tour.provider || 'Guide'), '</span>',
-                '</div>',
-                '<p class="mt-2 text-sm text-stone-600">', Number(tour.rating || 0).toFixed(2), ' (', String(tour.reviews || 0), ') • ', escapeHtml(tour.duration || 'Flexible'), ' • ', escapeHtml(tour.pax || '1-10 pax'), ' • ', escapeHtml(tour.difficulty || 'Moderate'), '</p>',
-                '<div class="mt-3 flex flex-wrap gap-1.5 text-xs">',
-                tags.slice(0, 4).map(function (tag) {
-                    return '<span class="rounded-full bg-stone-100 px-2 py-1 text-stone-600">' + escapeHtml(tag) + '</span>';
-                }).join(''),
-                '</div>',
-                '<div class="mt-auto flex items-center justify-between border-t border-stone-200 pt-3">',
-                '<p class="text-3xl font-bold">₱', Number(tour.price || 0).toLocaleString(), ' <span class="text-sm font-medium text-stone-500">/ person</span></p>',
-                '<a href="/tour-preview?tour=', encodeURIComponent(String(tour.id || '')), '" class="rounded-full bg-[#C7A34A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B8923E]">View Tour</a>',
-                '</div>',
-                '</div>',
-                '</article>'
-            ].join('');
+            return renderTourFeedCardMarkup(tour, {
+                tourRef: String(tour && tour.id ? tour.id : ''),
+                regionKey: inferTourRegionKey(tour)
+            });
         }
 
         function renderDbTours() {
@@ -2307,6 +2568,35 @@
             return 'Open';
         }
 
+        function buildRequestPaymentLine(state) {
+            if (!state || typeof state !== 'object') {
+                return '';
+            }
+
+            const status = String(state.status || '').toLowerCase();
+            const amount = Number(state.amount || 0);
+            const method = String(state.paymentMethod || '').trim();
+            const paid = status === 'paid';
+            const pendingCash = status === 'pending_cash_on_tour';
+            if (!paid && !pendingCash) {
+                return '';
+            }
+
+            const badgeLabel = paid ? 'PAID' : 'Pending (Cash on Tour)';
+            const badgeClass = paid ? 'paid' : 'pending';
+            const details = [
+                amount > 0 ? formatSimulatedPeso(amount) : '',
+                method ? ('via ' + method) : ''
+            ].filter(Boolean).join(' • ');
+
+            return [
+                '<div class="chat-payment-status">',
+                '<span class="chat-payment-badge ', escapeHtml(badgeClass), '">', escapeHtml(badgeLabel), '</span>',
+                details ? '<p class="chat-payment-summary mb-0">' + escapeHtml(details) + '</p>' : '',
+                '</div>'
+            ].join('');
+        }
+
         function formatCommentTimestamp(value) {
             if (!value) {
                 return 'Unknown time';
@@ -2543,6 +2833,8 @@
                 node.remove();
             });
 
+            const requestPaymentState = getRequestPaymentStateIndex();
+
             latestRequestRows.forEach(function (request) {
                 const id = String(request.id || '');
                 const bucket = requestStatusKey(request);
@@ -2551,17 +2843,13 @@
                 }
 
                 dbRequestMap[id] = request;
-                const primaryCandidate = getPrimaryGuideCandidate(request);
-                const canSelectCardGuide = bucket === 'open';
-                const openMessageButton = canSelectCardGuide && primaryCandidate
-                    ? '<button class="btn-soft" data-open-comment-message="' + escapeHtml(primaryCandidate.guideId) + '" data-request-id="' + escapeHtml(id) + '"><i class="fa-regular fa-comments me-1"></i>Open Message</button>'
-                    : '';
 
                 const card = document.createElement('article');
                 card.className = 'request-manage-card';
                 card.dataset.dbRequest = 'true';
                 card.dataset.requestId = id;
                 card.dataset.requestBucket = bucket;
+                const paymentLine = buildRequestPaymentLine(requestPaymentState[id]);
                 card.innerHTML = [
                     '<div class="request-top">',
                     '<div class="post-identity">',
@@ -2582,6 +2870,7 @@
                     '<div class="col-md-4">Travelers: <strong class="text-dark">', escapeHtml(request.travelers || '1 traveler'), '</strong></div>',
                     '</div>',
                     '<p class="small text-muted mt-2 mb-2">', escapeHtml(String(request.description || 'No additional trip details provided yet.')), '</p>',
+                    paymentLine,
                     '<div class="tag-row">',
                     (Array.isArray(request.interests) ? request.interests : []).map(function (interest) {
                         return '<span class="soft-tag">' + escapeHtml(interest) + '</span>';
@@ -2599,7 +2888,6 @@
                     '</div>',
                     '<div class="d-flex gap-2 mt-3 flex-wrap">',
                     '<button class="btn-ghost" data-toggle-thread><i class="fa-regular fa-comments me-1"></i>View Comments</button>',
-                    openMessageButton,
                     (String(request.status || '').toLowerCase() !== 'completed'
                         ? '<button class="btn-danger" data-delete-request><i class="fa-solid fa-trash me-1"></i>Delete Request</button>'
                         : ''),
@@ -2836,7 +3124,7 @@
                         const conversationId = result && result.conversationId ? String(result.conversationId) : '';
                         const redirect = result && result.redirect
                             ? String(result.redirect)
-                            : '/messages' + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
+                            : '/messages/' + encodeURIComponent(guideId) + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
                         window.location.href = redirect;
                     }).catch(function (error) {
                         showToast(error && error.message ? error.message : 'Unable to open private chat right now.', 'danger');
@@ -2933,7 +3221,7 @@
                     const conversationId = result && result.conversationId ? String(result.conversationId) : '';
                     const redirect = result && result.redirect
                         ? String(result.redirect)
-                        : '/messages' + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
+                        : '/messages/' + encodeURIComponent(String(selection.guideId || '')) + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : '');
                     setTimeout(function () {
                         window.location.href = redirect;
                     }, 320);
@@ -3299,6 +3587,46 @@
             });
         }
 
+        function formatBookingScheduleLabel(booking) {
+            const dateTimeRaw = booking && booking.bookingDateTime ? String(booking.bookingDateTime) : '';
+            const dateRaw = booking && booking.bookingDate ? String(booking.bookingDate) : '';
+            const timeRaw = booking && booking.bookingTime ? String(booking.bookingTime).trim() : '';
+            const createdRaw = booking && booking.createdAt ? String(booking.createdAt) : '';
+            const source = dateTimeRaw || dateRaw || createdRaw;
+
+            if (!source) {
+                return 'To be confirmed';
+            }
+
+            const parsed = new Date(source);
+            if (!Number.isNaN(parsed.getTime())) {
+                const dateLabel = parsed.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: '2-digit',
+                    year: 'numeric'
+                });
+                if (timeRaw) {
+                    return dateLabel + ' at ' + timeRaw;
+                }
+
+                if (dateTimeRaw) {
+                    const timeLabel = parsed.toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit'
+                    });
+                    return dateLabel + ' at ' + timeLabel;
+                }
+
+                if (!dateRaw && createdRaw) {
+                    return dateLabel;
+                }
+
+                return dateLabel;
+            }
+
+            return timeRaw ? (dateRaw + ' at ' + timeRaw) : dateRaw;
+        }
+
         function injectHistoryBookings() {
             if (!grid || !bookingHistory.length) {
                 return;
@@ -3320,6 +3648,7 @@
                 item.dataset.bookingId = bookingId;
                 item.dataset.bookingToken = bookingToken;
                 item.dataset.generated = 'true';
+                item.dataset.bookingDetailsUrl = '/booking/confirmation';
                 item.innerHTML = [
                     '<img class="media" src="', tour.image, '" alt="', tour.title, '">',
                     '<div class="booking-body">',
@@ -3332,7 +3661,7 @@
                     '<p class="small mb-2">Amount: <strong>', formatPeso(entry.total || tour.price), '</strong></p>',
                     '<span class="status-pill">Booked</span>',
                     '<div class="d-grid mt-3">',
-                    '<button class="btn-soft text-center" type="button" data-view-booking-token="', bookingToken, '">View Receipt</button>',
+                    '<button class="btn-soft text-center" type="button" data-view-booking-token="', bookingToken, '">Receipt</button>',
                     '</div>',
                     '</div>'
                 ].join('');
@@ -3366,7 +3695,7 @@
                 receiptTourName.textContent = booking.tourTitle || 'Tour Booking';
             }
             if (receiptBookingDate) {
-                receiptBookingDate.textContent = booking.bookingDate || 'To be confirmed';
+                receiptBookingDate.textContent = formatBookingScheduleLabel(booking);
             }
             if (receiptGuestCount) {
                 receiptGuestCount.textContent = String(booking.guestCount || 1);
@@ -3432,6 +3761,10 @@
                 const state = String(booking.state || 'pending');
                 const rawPaymentStatus = String(booking.paymentStatus || '').toLowerCase();
                 const isBookedUnpaid = state === 'booked' && rawPaymentStatus === 'unpaid';
+                const hasBookingSchedule = Boolean(booking.hasBookingSchedule);
+                const completionSecondsLeft = Math.max(0, Number(booking.completionSecondsLeft || 0));
+                const canMarkCompleted = Boolean(booking.isCompletable);
+                const bookingScheduleLabel = formatBookingScheduleLabel(booking);
                 const paymentMethod = String(booking.paymentMethod || '').trim();
                 const reviewSummary = booking.review && typeof booking.review === 'object' ? booking.review : null;
                 const hasReview = Boolean(booking.hasReview || reviewSummary);
@@ -3443,6 +3776,9 @@
                 card.dataset.state = state;
                 card.dataset.bookingId = String(booking.id || '');
                 card.dataset.dbBooking = 'true';
+                if (booking.bookingDetailsUrl) {
+                    card.dataset.bookingDetailsUrl = String(booking.bookingDetailsUrl);
+                }
                 card.innerHTML = [
                     '<img class="media" src="', escapeHtml(booking.image || 'images/pangasinan.jpg'), '" onerror="this.onerror=null;this.src=\'images/pangasinan.jpg\';" alt="', escapeHtml(booking.tourTitle || 'Tour Booking'), '">',
                     '<div class="booking-body">',
@@ -3451,7 +3787,14 @@
                     '<img src="', escapeHtml(booking.guideAvatar || 'images/manila.jpg'), '" onerror="this.onerror=null;this.src=\'images/manila.jpg\';" alt="Guide" style="width:26px;height:26px;border-radius:50%;object-fit:cover;">',
                     '<small>Guide: ', escapeHtml(booking.guideName || 'Guide'), '</small>',
                     '</div>',
-                    '<p class="small text-muted mb-2">Booking Date: ', escapeHtml(booking.bookingDate || 'To be confirmed'), '</p>',
+                    '<p class="small text-muted mb-1">Booking Date: ', escapeHtml(bookingScheduleLabel), '</p>',
+                    (state === 'pending' || state === 'booked')
+                        ? (!hasBookingSchedule
+                            ? '<p class="small text-danger mb-2">Booking date is not set yet.</p>'
+                            : (completionSecondsLeft > 0
+                            ? '<p class="small text-muted mb-2" data-booking-live-time data-seconds-left="' + escapeHtml(String(completionSecondsLeft)) + '">Starts in: ' + escapeHtml(formatCountdown(completionSecondsLeft)) + '</p>'
+                            : '<p class="small text-success mb-2" data-booking-live-time data-seconds-left="0">Booking date reached.</p>'))
+                        : '<p class="small text-muted mb-2">Booking timeline finalized.</p>',
                     '<p class="small mb-2">Amount: <strong>', formatPeso(booking.total || 0), '</strong></p>',
                     paymentLine,
                     '<span class="status-pill', state === 'completed' ? ' completed' : '', state === 'cancelled' ? ' cancelled' : '', '">', mapStateLabel(state), '</span>',
@@ -3462,10 +3805,15 @@
                         ? '<p class="small text-danger mt-2">Cancellation window expired.</p>'
                         : '',
                     state === 'pending'
-                        ? '<div class="booking-action-row d-flex flex-column flex-sm-row gap-2 mt-3"><button class="btn-soft flex-fill" type="button" data-view-receipt-booking="' + escapeHtml(String(booking.id || '')) + '"><i class="fa-solid fa-file-invoice me-1"></i>View Receipt</button><button class="btn-danger flex-fill" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="cancel"' + (booking.isCancellable ? '' : ' disabled') + '><i class="fa-solid fa-ban me-1"></i>Cancel Booking</button></div>'
+                        ? '<div class="booking-action-row d-flex flex-column flex-sm-row gap-2 mt-3"><button class="btn-soft flex-fill" type="button" data-view-receipt-booking="' + escapeHtml(String(booking.id || '')) + '"><i class="fa-solid fa-file-invoice me-1"></i>Receipt</button><button class="btn-danger flex-fill" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="cancel"' + (booking.isCancellable ? '' : ' disabled') + '><i class="fa-solid fa-ban me-1"></i>Cancel</button></div>'
                         : '',
                     state === 'booked'
-                        ? '<button class="btn-gold w-100 mt-3" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="mark_completed"><i class="fa-solid fa-check me-1"></i>Mark Completed</button>'
+                                                ? '<div class="booking-action-row d-flex flex-column flex-sm-row gap-2 mt-3"><button class="btn-soft flex-fill" type="button" data-view-receipt-booking="' + escapeHtml(String(booking.id || '')) + '"><i class="fa-solid fa-file-invoice me-1"></i>Receipt</button><button class="btn-gold flex-fill" data-transition-booking="' + escapeHtml(String(booking.id || '')) + '" data-transition-action="mark_completed"' + (canMarkCompleted ? '' : ' disabled') + '><i class="fa-solid fa-check me-1"></i></button></div>' +
+                          (!hasBookingSchedule
+                              ? '<p class="small text-danger mt-2">Set booking date/time before marking completed.</p>'
+                              : (canMarkCompleted
+                              ? '<p class="small text-success mt-2" data-complete-countdown data-seconds-left="0">Booking date reached. You can mark this as completed.</p>'
+                              : '<p class="small text-muted mt-2" data-complete-countdown data-seconds-left="' + escapeHtml(String(completionSecondsLeft)) + '">Mark as completed in: ' + escapeHtml(formatCountdown(completionSecondsLeft)) + '</p>'))
                         : '',
                     state === 'completed'
                         ? (hasReview
@@ -3567,6 +3915,38 @@
                     row.classList.add('text-danger');
                 }
             });
+
+            qsa('[data-booking-live-time]', grid).forEach(function (row) {
+                const next = Math.max(0, Number(row.dataset.secondsLeft || 0) - 1);
+                row.dataset.secondsLeft = String(next);
+                row.textContent = next > 0
+                    ? 'Starts in: ' + formatCountdown(next)
+                    : 'Booking date reached.';
+
+                if (next <= 0) {
+                    row.classList.remove('text-muted');
+                    row.classList.add('text-success');
+                }
+            });
+
+            qsa('[data-complete-countdown]', grid).forEach(function (row) {
+                const next = Math.max(0, Number(row.dataset.secondsLeft || 0) - 1);
+                row.dataset.secondsLeft = String(next);
+                row.textContent = next > 0
+                    ? 'Mark as completed in: ' + formatCountdown(next)
+                    : 'Booking date reached. You can mark this as completed.';
+
+                const card = row.closest('.booking-card');
+                const completeBtn = card ? qs('[data-transition-action="mark_completed"]', card) : null;
+                if (completeBtn) {
+                    completeBtn.disabled = next > 0;
+                }
+
+                if (next <= 0) {
+                    row.classList.remove('text-muted');
+                    row.classList.add('text-success');
+                }
+            });
         }
 
         tabButtons.forEach(function (button) {
@@ -3581,6 +3961,32 @@
 
         if (grid) {
             grid.addEventListener('click', function (event) {
+                const clickedCard = event.target.closest('.booking-card[data-state]');
+                const clickedInteractive = event.target.closest('button, a, input, select, textarea, label, [data-transition-booking], [data-rate-booking], [data-view-booking-token], [data-view-receipt-booking]');
+                if (clickedCard && !clickedInteractive) {
+                    const detailsUrl = String(clickedCard.dataset.bookingDetailsUrl || '').trim();
+                    if (detailsUrl) {
+                        window.location.href = detailsUrl;
+                        return;
+                    }
+
+                    const token = String(clickedCard.dataset.bookingToken || '').trim();
+                    if (token) {
+                        const target = bookingHistory.find(function (entry) {
+                            if (!entry) {
+                                return false;
+                            }
+                            return (entry.bookingToken && entry.bookingToken === token)
+                                || (entry.reference && entry.reference === token);
+                        });
+                        if (target) {
+                            setBookingDraft(target);
+                        }
+                        window.location.href = '/booking/confirmation';
+                        return;
+                    }
+                }
+
                 const transitionBtn = event.target.closest('[data-transition-booking]');
                 if (transitionBtn) {
                     const bookingId = transitionBtn.dataset.transitionBooking;
@@ -3913,6 +4319,7 @@
 
     function createBookingFromDraft(draft, tour) {
         const source = draft && typeof draft === 'object' ? draft : {};
+        const traveler = source.traveler && typeof source.traveler === 'object' ? source.traveler : {};
         const listingId = String(source.tourListingId || (tour && tour.id) || '').trim();
         const normalizedDraftTitle = String((tour && tour.title) || source.title || '').trim().toLowerCase();
         const normalizedDraftLocation = String((tour && tour.location) || source.location || '').trim().toLowerCase();
@@ -3972,7 +4379,11 @@
                 booked_for_date: source.date || null,
                 booked_for_time: source.time || null,
                 guest_count: Math.max(1, Number(source.guests || 1)),
-                notes: source.traveler && source.traveler.notes ? String(source.traveler.notes) : null,
+                notes: traveler.notes ? String(traveler.notes) : null,
+                traveler_full_name: traveler.fullName ? String(traveler.fullName) : null,
+                traveler_email: traveler.email ? String(traveler.email) : null,
+                traveler_phone: traveler.phone ? String(traveler.phone) : null,
+                traveler_emergency_contact: traveler.emergency ? String(traveler.emergency) : null,
                 payment_method: paymentMethod || null,
                 payment_status: paymentStatus,
                 payment_reference: source.reference || null,
@@ -4105,6 +4516,8 @@
         const bookNowBtn = qs('#previewBookNow');
         const bookNowHint = qs('#previewBookNowHint');
         const likeBtn = qs('#previewLikeBtn');
+        const imageModal = qs('#tourPreviewImageModal');
+        const imageModalImage = qs('#tourPreviewImageFull');
         const manualApproval = String(tour.reservationType || '').toLowerCase() === 'manual approval';
         const availabilitySessionKey = 'tribaltours_availability_checked_' + String(tour.id || '');
         const routeTourRef = String(params.get('tour') || '').trim().toLowerCase();
@@ -4174,10 +4587,18 @@
                 const rating = Math.max(1, Math.min(5, Number(item && item.rating ? item.rating : 0)));
                 const title = String(item && item.title ? item.title : '').trim();
                 const comment = String(item && item.comment ? item.comment : '').trim();
+                const avatar = normalizeTourAssetPath((item && (item.touristAvatar || item.reviewerAvatar || item.avatar || item.profilePhoto || item.photo)) || 'images/manila.jpg');
+                const stars = '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
                 const row = document.createElement('article');
                 row.className = 'settings-card dashboard-review-card';
                 row.innerHTML = [
-                    '<p class="small mb-1"><strong>', escapeHtml(name), '</strong> • ', '★'.repeat(rating), '</p>',
+                    '<div class="tour-preview-review-head">',
+                    '<img class="tour-preview-review-avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(name), ' profile" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                    '<div class="tour-preview-review-head-meta">',
+                    '<p class="small mb-1"><strong>', escapeHtml(name), '</strong></p>',
+                    '<p class="small mb-1"><span class="tour-preview-review-stars" aria-label="', String(rating), ' out of 5 stars">', stars, '</span></p>',
+                    '</div>',
+                    '</div>',
                     title ? '<p class="small text-muted mb-1">' + escapeHtml(title) + '</p>' : '',
                     comment ? '<p class="small text-muted mb-0">' + escapeHtml(comment) + '</p>' : '<p class="small text-muted mb-0">No written comment provided.</p>'
                 ].join('');
@@ -4191,17 +4612,19 @@
             const rawSlug = String(raw.slug || '').trim();
             const rawLegacy = String(raw.legacyKey || '').trim();
 
-            let base = null;
-            if (rawId) {
-                base = getTourById(rawId);
+            const hasLiveFeedShape = Boolean(
+                raw.title
+                || raw.location
+                || raw.price
+                || raw.guide
+                || raw.provider
+            );
+
+            let base = {};
+            if (!hasLiveFeedShape) {
+                const fallbackKey = rawSlug || rawLegacy || (!/^\d+$/.test(rawId) ? rawId : '');
+                base = fallbackKey ? (getTourById(fallbackKey) || {}) : {};
             }
-            if (!base && rawSlug) {
-                base = getTourById(rawSlug);
-            }
-            if (!base && rawLegacy) {
-                base = getTourById(rawLegacy);
-            }
-            base = base && typeof base === 'object' ? base : {};
 
             const tags = (Array.isArray(raw.tags) ? raw.tags : (Array.isArray(base.tags) ? base.tags : []))
                 .map(function (tag) {
@@ -4214,14 +4637,19 @@
                 id: rawId || String(base.id || rawSlug || rawLegacy || '').trim(),
                 slug: rawSlug || String(base.slug || '').trim(),
                 legacyKey: rawLegacy || String(base.legacyKey || '').trim(),
-                title: String(raw.title || base.title || 'Tour listing').trim(),
+                title: String(raw.title || base.title || 'Custom Tour').trim(),
                 location: String(raw.location || base.location || 'Philippines').trim(),
                 rating: Math.max(0, Math.min(5, Number(raw.rating || base.rating || 0))),
                 reviews: Math.max(0, Math.round(Number(raw.reviews || base.reviews || 0))),
                 duration: String(raw.duration || raw.durationHours || base.duration || base.durationHours || 'Flexible').trim(),
                 pax: String(raw.pax || base.pax || '1-10 pax').trim(),
+                difficulty: String(raw.difficulty || base.difficulty || 'Moderate').trim(),
+                badge: String(raw.badge || raw.status || base.badge || 'Guide Listing').trim(),
                 price: Math.max(0, Number(raw.price || base.price || 0)),
                 image: normalizeTourAssetPath(raw.image || raw.coverImage || base.image || 'images/pangasinan.jpg'),
+                guideAvatar: normalizeTourAssetPath(raw.guideAvatar || raw.guidePhoto || base.guideAvatar || base.guidePhoto || 'images/manila.jpg'),
+                guide: String(raw.guide || raw.provider || base.guide || base.provider || 'Guide').trim(),
+                provider: String(raw.provider || raw.guide || base.provider || base.guide || 'Guide').trim(),
                 tags: tags,
                 latest: Number(raw.latest || base.latest || Date.now()),
                 regionText: String(raw.region || base.region || '').trim()
@@ -4286,30 +4714,43 @@
             }
 
             const sourceRows = [];
-            if (Array.isArray(similarFeedRows)) {
-                sourceRows.push.apply(sourceRows, similarFeedRows);
+            if (Array.isArray(similarFeedRows) && similarFeedRows.length) {
+                similarFeedRows.forEach(function (row) {
+                    if (!row || typeof row !== 'object') {
+                        return;
+                    }
+                    sourceRows.push(Object.assign({}, row, {
+                        id: String(row.id || '').trim(),
+                        slug: String(row.slug || '').trim(),
+                        legacyKey: String(row.legacyKey || row.slug || '').trim(),
+                        latest: Number(row.latest || Date.now()),
+                    }));
+                });
+            } else {
+                Object.keys(TOUR_CATALOG).forEach(function (key) {
+                    sourceRows.push(Object.assign({
+                        id: key,
+                        legacyKey: key,
+                    }, TOUR_CATALOG[key] || {}));
+                });
+
+                const guideCatalog = getGuideToursCatalog();
+                Object.keys(guideCatalog).forEach(function (key) {
+                    const item = guideCatalog[key] || {};
+                    const legacy = String(item.legacyKey || '').trim().toLowerCase();
+                    sourceRows.push(Object.assign({}, item, {
+                        id: String(item.id || key || legacy),
+                        legacyKey: legacy,
+                    }));
+                });
             }
-
-            Object.keys(TOUR_CATALOG).forEach(function (key) {
-                sourceRows.push(Object.assign({
-                    id: key,
-                    legacyKey: key,
-                }, TOUR_CATALOG[key] || {}));
-            });
-
-            const guideCatalog = getGuideToursCatalog();
-            Object.keys(guideCatalog).forEach(function (key) {
-                sourceRows.push(Object.assign({
-                    id: key,
-                }, guideCatalog[key] || {}));
-            });
 
             const seen = Object.create(null);
             const candidates = sourceRows.map(normalizeSimilarTour).filter(function (entry) {
                 const key = String(
-                    entry.id
+                    entry.legacyKey
                     || entry.slug
-                    || entry.legacyKey
+                    || entry.id
                     || normalizeTourLookupKey(String(entry.title || '') + ' ' + String(entry.location || ''))
                 ).trim().toLowerCase();
 
@@ -4327,7 +4768,7 @@
                     return scoreDiff;
                 }
                 return Number(b.latest || 0) - Number(a.latest || 0);
-            }).slice(0, 4);
+            }).slice(0, 8);
 
             similarListHost.innerHTML = '';
             if (!ranked.length) {
@@ -4342,29 +4783,33 @@
             }
 
             ranked.forEach(function (entry) {
-                const tourRef = String(entry.id || entry.slug || entry.legacyKey || '').trim();
+                const tourRef = String(entry.slug || entry.id || entry.legacyKey || '').trim();
                 if (!tourRef) {
                     return;
                 }
 
-                const card = document.createElement('article');
-                card.className = 'tour-preview-similar-card';
-                card.innerHTML = [
-                    '<a class="tour-preview-similar-card__media" href="/tour-preview?tour=', encodeURIComponent(tourRef), '">',
-                    '<img src="', escapeHtml(entry.image || 'images/pangasinan.jpg'), '" alt="', escapeHtml(entry.title || 'Tour listing'), '">',
-                    '</a>',
-                    '<div class="tour-preview-similar-card__body">',
-                    '<p class="tour-preview-similar-card__location">', escapeHtml(entry.location || 'Philippines'), '</p>',
-                    '<h3 class="tour-preview-similar-card__title"><a href="/tour-preview?tour=', encodeURIComponent(tourRef), '">', escapeHtml(entry.title || 'Tour listing'), '</a></h3>',
-                    '<p class="tour-preview-similar-card__meta">', Number(entry.rating || 0).toFixed(2), ' (', String(entry.reviews || 0), ') • ', escapeHtml(entry.duration || 'Flexible'), ' • ', escapeHtml(entry.pax || '1-10 pax'), '</p>',
-                    '<div class="tour-preview-similar-card__footer">',
-                    '<strong>', formatPeso(entry.price), '</strong>',
-                    '<a href="/tour-preview?tour=', encodeURIComponent(tourRef), '" class="btn-soft py-1 px-2">View Tour</a>',
-                    '</div>',
-                    '</div>'
-                ].join('');
-                similarListHost.appendChild(card);
+                const regionKey = resolveRequestRegionKey(String(entry.regionText || '') + ' ' + String(entry.location || ''));
+                const cardData = normalizeTourData(entry, {
+                    id: String(entry.id || tourRef),
+                    legacyKey: String(entry.legacyKey || ''),
+                    slug: String(entry.slug || ''),
+                    latest: Number(entry && entry.latest ? entry.latest : Date.now()),
+                    guide: String(entry.guide || entry.provider || ''),
+                    provider: String(entry.provider || entry.guide || ''),
+                });
+
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = renderTourFeedCardMarkup(cardData, {
+                    tourRef: tourRef,
+                    regionKey: inferTourRegionKey(cardData) || regionKey
+                });
+                const card = wrapper.firstElementChild;
+                if (card) {
+                    similarListHost.appendChild(card);
+                }
             });
+
+            bindLikeButtons(similarListHost);
         };
 
         const syncSimilarToursFromApi = function () {
@@ -4381,6 +4826,40 @@
             }).catch(function () {
                 renderSimilarTours();
                 return [];
+            });
+        };
+
+        const bindPreviewImageViewer = function () {
+            if (!imageModal || !imageModalImage || !window.bootstrap || !window.bootstrap.Modal) {
+                return;
+            }
+
+            qsa('[data-tour-image]').forEach(function (img) {
+                if (!img || img.dataset.boundPreviewZoom === 'true') {
+                    return;
+                }
+
+                const openViewer = function () {
+                    const src = String(img.currentSrc || img.getAttribute('src') || '').trim();
+                    if (!src) {
+                        return;
+                    }
+                    imageModalImage.src = src;
+                    imageModalImage.alt = String(img.getAttribute('alt') || 'Tour image preview');
+                    window.bootstrap.Modal.getOrCreateInstance(imageModal).show();
+                };
+
+                img.style.cursor = 'zoom-in';
+                img.setAttribute('role', 'button');
+                img.setAttribute('tabindex', '0');
+                img.addEventListener('click', openViewer);
+                img.addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openViewer();
+                    }
+                });
+                img.dataset.boundPreviewZoom = 'true';
             });
         };
 
@@ -4472,10 +4951,25 @@
             img.src = tour.gallery[index] || tour.image;
             img.alt = tour.title;
         });
+        bindPreviewImageViewer();
 
         if (likeBtn) {
             likeBtn.dataset.likeId = tour.id;
             bindLikeButtons();
+        }
+
+        if (similarListHost && !similarListHost.dataset.boundLikeClick) {
+            similarListHost.addEventListener('click', function (event) {
+                const likeButton = event.target.closest('[data-like-id]');
+                if (!likeButton) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                const liked = toggleLike(likeButton.dataset.likeId, likeButton);
+                showToast(liked ? 'Tour saved to likes.' : 'Tour removed from likes.', 'success');
+            });
+            similarListHost.dataset.boundLikeClick = 'true';
         }
 
         if (bookNowBtn) {
@@ -4612,16 +5106,24 @@
 
         syncSimilarToursFromApi();
         window.setInterval(syncSimilarToursFromApi, 30000);
-        subscribeRealtime('tour-listings', 'tour-listing.updated', function (payload) {
-            const liveTour = payload && payload.tour ? payload.tour : null;
-            if (!liveTour || !liveTour.id) {
+
+        const handleLiveTourListingChange = function (payload) {
+            const source = payload && payload.tour ? payload.tour : payload;
+            const fallbackId = String((payload && (payload.tourId || payload.id)) || '').trim();
+            const liveId = String((source && source.id) || fallbackId).trim();
+            if (!liveId) {
                 return;
             }
 
-            const liveId = String(liveTour.id);
-            const remove = String(liveTour.action || '').toLowerCase() === 'deleted'
+            const liveTour = Object.assign({}, source || {}, {
+                id: liveId,
+            });
+            const action = String((liveTour.action || payload && payload.action || '')).toLowerCase();
+            const eventName = String((payload && payload.type) || '').toLowerCase();
+            const remove = action === 'deleted'
+                || eventName === 'tour-listing.deleted'
                 || liveTour.isActive === false
-                || String(liveTour.status || '').toLowerCase() !== 'published';
+                || (liveTour.status && String(liveTour.status).toLowerCase() !== 'published');
             const index = similarFeedRows.findIndex(function (entry) {
                 return String(entry && entry.id ? entry.id : '') === liveId;
             });
@@ -4637,10 +5139,12 @@
             if (index >= 0) {
                 similarFeedRows[index] = Object.assign({}, similarFeedRows[index], liveTour, {
                     id: liveId,
+                    latest: Number(liveTour.latest || Date.now()),
                 });
             } else {
                 similarFeedRows.unshift(Object.assign({}, liveTour, {
                     id: liveId,
+                    latest: Number(liveTour.latest || Date.now()),
                 }));
             }
 
@@ -4654,6 +5158,14 @@
                 setText('[data-tour-reviews]', String(Math.max(0, Number(liveTour.reviews || 0))));
                 renderTourReviews(liveTour.recentReviews || []);
             }
+        };
+
+        ['tour-listing.created', 'tour-listing.updated', 'tour-listing.deleted'].forEach(function (eventName) {
+            subscribeRealtime('tour-listings', eventName, function (payload) {
+                handleLiveTourListingChange(Object.assign({}, payload || {}, {
+                    type: eventName,
+                }));
+            });
         });
     }
 
@@ -4661,37 +5173,58 @@
         if (document.body.dataset.view !== 'booking-details') {
             return;
         }
+
         const params = new URLSearchParams(window.location.search);
-        const tour = getTourById(params.get('tour'));
+        const serverBooking = window.TRBL_BOOKING_DETAIL && typeof window.TRBL_BOOKING_DETAIL === 'object'
+            ? window.TRBL_BOOKING_DETAIL
+            : null;
+        const routeTourRef = String((serverBooking && serverBooking.tourId) || params.get('tour') || '').trim();
+        const tour = getTourById(routeTourRef);
         const stored = getBookingDraft() || {};
         const guestInput = qs('#bookingGuests');
         const dateInput = qs('#bookingDate');
+        const timeInput = qs('#bookingTime');
+        const travelerFullNameInput = qs('#travelerFullName');
+        const travelerEmailInput = qs('#travelerEmail');
+        const travelerPhoneInput = qs('#travelerPhone');
+        const travelerEmergencyInput = qs('#travelerEmergency');
+        const travelerNotesInput = qs('#travelerNotes');
         const subtotalEl = qs('#bookingSubtotal');
         const totalEl = qs('#bookingTotal');
         const form = qs('#bookingDetailsForm');
         const today = new Date().toISOString().split('T')[0];
 
-        setBookingDraft(Object.assign({}, stored, {
-            tourId: tour.id,
-            tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : (stored.tourListingId || null),
-            tourSlug: String(tour.slug || stored.tourSlug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
-            title: tour.title,
-            location: tour.location
-        }));
-        qs('[data-booking-tour-title]').textContent = tour.title;
-        qs('[data-booking-tour-location]').textContent = tour.location;
-        qs('[data-booking-tour-price]').textContent = formatPeso(tour.price);
-        if (guestInput) {
-            guestInput.value = String(stored.guests || 1);
-        }
-        if (dateInput) {
-            dateInput.min = today;
-            dateInput.value = stored.date || today;
-        }
+        const toDateInputValue = function (value) {
+            const raw = value ? String(value) : '';
+            if (!raw) {
+                return '';
+            }
+            const parsed = new Date(raw);
+            if (Number.isNaN(parsed.getTime())) {
+                return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+            }
+            return parsed.toISOString().split('T')[0];
+        };
 
-        const syncTotals = function () {
-            const guests = Number(guestInput ? guestInput.value : 1) || 1;
-            const subtotal = calculateBookingTotal(tour, guests);
+        const mapBookingStatusLabel = function (value) {
+            const state = String(value || 'pending').toLowerCase();
+            if (state === 'completed') {
+                return 'Completed';
+            }
+            if (state === 'booked') {
+                return 'Booked';
+            }
+            if (state === 'cancelled') {
+                return 'Cancelled';
+            }
+            return 'Pending Confirmation';
+        };
+
+        const syncTotals = function (currentTour, overrideTotal) {
+            const guests = Math.max(1, Number(guestInput ? guestInput.value : 1) || 1);
+            const subtotal = typeof overrideTotal === 'number'
+                ? Math.max(0, overrideTotal)
+                : calculateBookingTotal(currentTour, guests);
             if (subtotalEl) {
                 subtotalEl.textContent = formatPeso(subtotal);
             }
@@ -4700,10 +5233,157 @@
             }
         };
 
-        if (guestInput) {
-            guestInput.addEventListener('input', syncTotals);
+        if (serverBooking && serverBooking.id) {
+            const traveler = serverBooking.traveler && typeof serverBooking.traveler === 'object'
+                ? serverBooking.traveler
+                : {};
+            const guestCount = Math.max(1, Number(serverBooking.guestCount || 1));
+            const bookingDate = toDateInputValue(serverBooking.bookingDate || serverBooking.bookingDateTime || serverBooking.createdAt || '');
+            const bookingTime = String(serverBooking.bookingTime || '').trim();
+            const totalAmount = Math.max(0, Number(serverBooking.total || 0));
+            const snapshotAmount = Math.max(0, Number(serverBooking.priceSnapshot || 0));
+            const inferredUnit = guestCount > 0 ? totalAmount / guestCount : totalAmount;
+            const packageAmount = snapshotAmount > 0 ? snapshotAmount : inferredUnit;
+
+            if (qs('[data-booking-tour-title]')) {
+                qs('[data-booking-tour-title]').textContent = serverBooking.tourTitle || tour.title;
+            }
+            if (qs('[data-booking-tour-location]')) {
+                qs('[data-booking-tour-location]').textContent = String(serverBooking.tourLocation || tour.location || '');
+            }
+            if (qs('[data-booking-tour-price]')) {
+                qs('[data-booking-tour-price]').textContent = formatPeso(packageAmount);
+            }
+
+            if (guestInput) {
+                guestInput.value = String(guestCount);
+            }
+            if (dateInput) {
+                dateInput.value = bookingDate;
+            }
+            if (timeInput && bookingTime) {
+                const hasTimeOption = qsa('option', timeInput).some(function (option) {
+                    return String(option.value || '') === bookingTime;
+                });
+                if (!hasTimeOption) {
+                    const option = document.createElement('option');
+                    option.value = bookingTime;
+                    option.textContent = bookingTime;
+                    timeInput.appendChild(option);
+                }
+                timeInput.value = bookingTime;
+            }
+
+            if (travelerFullNameInput) {
+                travelerFullNameInput.value = String(traveler.fullName || '');
+            }
+            if (travelerEmailInput) {
+                travelerEmailInput.value = String(traveler.email || '');
+            }
+            if (travelerPhoneInput) {
+                travelerPhoneInput.value = String(traveler.phone || '');
+            }
+            if (travelerEmergencyInput) {
+                travelerEmergencyInput.value = String(traveler.emergency || '');
+            }
+            if (travelerNotesInput) {
+                travelerNotesInput.value = String(traveler.notes || serverBooking.notes || '');
+            }
+
+            if (form) {
+                qsa('input, select, textarea', form).forEach(function (field) {
+                    field.disabled = true;
+                });
+
+                const submitButton = qs('button[type="submit"]', form);
+                if (submitButton) {
+                    submitButton.style.display = 'none';
+                }
+
+                if (!qs('[data-booking-detail-note]', form)) {
+                    const detailNote = document.createElement('p');
+                    detailNote.className = 'small text-muted mt-3 mb-2';
+                    detailNote.setAttribute('data-booking-detail-note', 'true');
+                    detailNote.textContent = 'Reference: ' + String(serverBooking.reference || 'N/A') + ' • Status: ' + mapBookingStatusLabel(String(serverBooking.state || 'pending'));
+                    form.appendChild(detailNote);
+                }
+
+                if (!qs('[data-booking-detail-actions]', form)) {
+                    const actions = document.createElement('div');
+                    actions.className = 'd-flex flex-column flex-sm-row gap-2 mt-2';
+                    actions.setAttribute('data-booking-detail-actions', 'true');
+
+                    const resolvedTourPreviewUrl = String(serverBooking.tourPreviewUrl || '').trim()
+                        || (serverBooking.tourId ? '/tour-preview?tour=' + encodeURIComponent(String(serverBooking.tourId)) : '');
+                    const previewButton = resolvedTourPreviewUrl
+                        ? '<a class="btn-gold" href="' + escapeHtml(resolvedTourPreviewUrl) + '"><i class="fa-solid fa-map-location-dot me-1"></i>View Booked Tour Listing</a>'
+                        : '';
+
+                    actions.innerHTML = previewButton + '<a class="btn-soft" href="/my-bookings"><i class="fa-solid fa-arrow-left me-1"></i>Back to My Bookings</a>';
+                    form.appendChild(actions);
+                }
+            }
+
+            syncTotals(tour, totalAmount);
+            return;
         }
-        syncTotals();
+
+        const storedListingId = String(stored.tourListingId || '').trim();
+        const resolvedDraftTourId = String(stored.tourId || '').trim() || routeTourRef || String(tour.id || '').trim();
+        const resolvedDraftListingId = /^\d+$/.test(storedListingId)
+            ? storedListingId
+            : (/^\d+$/.test(routeTourRef)
+                ? routeTourRef
+                : (/^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null));
+
+        setBookingDraft(Object.assign({}, stored, {
+            tourId: resolvedDraftTourId,
+            tourListingId: resolvedDraftListingId,
+            tourSlug: String(tour.slug || stored.tourSlug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
+            title: tour.title,
+            location: tour.location
+        }));
+        if (qs('[data-booking-tour-title]')) {
+            qs('[data-booking-tour-title]').textContent = tour.title;
+        }
+        if (qs('[data-booking-tour-location]')) {
+            qs('[data-booking-tour-location]').textContent = tour.location;
+        }
+        if (qs('[data-booking-tour-price]')) {
+            qs('[data-booking-tour-price]').textContent = formatPeso(tour.price);
+        }
+        if (guestInput) {
+            guestInput.value = String(stored.guests || 1);
+        }
+        if (dateInput) {
+            dateInput.min = today;
+            dateInput.value = stored.date || today;
+        }
+        if (timeInput && stored.time) {
+            timeInput.value = String(stored.time);
+        }
+        if (travelerFullNameInput) {
+            travelerFullNameInput.value = String(stored.traveler && stored.traveler.fullName ? stored.traveler.fullName : '');
+        }
+        if (travelerEmailInput) {
+            travelerEmailInput.value = String(stored.traveler && stored.traveler.email ? stored.traveler.email : '');
+        }
+        if (travelerPhoneInput) {
+            travelerPhoneInput.value = String(stored.traveler && stored.traveler.phone ? stored.traveler.phone : '');
+        }
+        if (travelerEmergencyInput) {
+            travelerEmergencyInput.value = String(stored.traveler && stored.traveler.emergency ? stored.traveler.emergency : '');
+        }
+        if (travelerNotesInput) {
+            travelerNotesInput.value = String(stored.traveler && stored.traveler.notes ? stored.traveler.notes : '');
+        }
+
+        if (guestInput) {
+            guestInput.addEventListener('input', function () {
+                syncTotals(tour);
+            });
+        }
+        syncTotals(tour);
 
         if (form) {
             form.addEventListener('submit', function (event) {
@@ -4716,13 +5396,13 @@
                         tourId: tour.id,
                         guests: Number(guestInput ? guestInput.value : 1) || 1,
                         date: dateInput ? dateInput.value : '',
-                        time: qs('#bookingTime') ? qs('#bookingTime').value : '',
+                        time: timeInput ? timeInput.value : '',
                         traveler: {
-                            fullName: qs('#travelerFullName').value,
-                            email: qs('#travelerEmail').value,
-                            phone: qs('#travelerPhone').value,
-                            emergency: qs('#travelerEmergency').value,
-                            notes: qs('#travelerNotes').value
+                            fullName: travelerFullNameInput ? travelerFullNameInput.value : '',
+                            email: travelerEmailInput ? travelerEmailInput.value : '',
+                            phone: travelerPhoneInput ? travelerPhoneInput.value : '',
+                            emergency: travelerEmergencyInput ? travelerEmergencyInput.value : '',
+                            notes: travelerNotesInput ? travelerNotesInput.value : ''
                         },
                         total: calculateBookingTotal(tour, Number(guestInput ? guestInput.value : 1) || 1)
                     });
@@ -4777,11 +5457,16 @@
                 }
                 continueBtn.disabled = true;
                 const bookingToken = draft.bookingToken || ('bk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7));
+                const draftListingId = String(draft.tourListingId || '').trim();
+                const resolvedListingId = /^\d+$/.test(draftListingId)
+                    ? draftListingId
+                    : (/^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null);
                 setBookingDraft(Object.assign({}, draft, {
-                    tourListingId: /^\d+$/.test(String(tour.id || '')) ? String(tour.id) : null,
+                    tourId: String(draft.tourId || tour.id || ''),
+                    tourListingId: resolvedListingId,
                     tourSlug: String(tour.slug || draft.tourSlug || (!/^\d+$/.test(String(tour.id || '')) ? tour.id : '') || ''),
-                    title: tour.title,
-                    location: tour.location,
+                    title: String(draft.title || tour.title || ''),
+                    location: String(draft.location || tour.location || ''),
                     paymentMethod: selected,
                     bookingToken: bookingToken,
                     paymentStatus: 'pending'
@@ -4856,7 +5541,7 @@
             if (progress >= 100) {
                 running = false;
                 if (statusLabel) {
-                    statusLabel.textContent = 'Finalizing booking in database...';
+                    statusLabel.textContent = 'Finalizing booking...';
                 }
 
                 const latestDraft = getBookingDraft() || draft;
@@ -4984,8 +5669,16 @@
         const typing = qs('#typingIndicator');
         const emojiToggle = qs('#emojiToggle');
         const emojiPanel = qs('#emojiPanel');
+        const paymentCardHost = qs('#chatPaymentCardHost');
+        const conversationPanel = qs('.conversation-list');
+        const chatWindow = qs('.chat-window');
+        const chatBackBtn = qs('#chatBackBtn');
+        const chatRefreshBtn = qs('[data-chat-refresh]');
+        const chatShowListBtn = qs('[data-chat-show-list]');
         const params = new URLSearchParams(window.location.search);
-        const convoFromRoute = params.get('conversation');
+        let convoFromRoute = params.get('conversation');
+        const routeGuideId = String(document.body.dataset.routeGuideId || '').trim();
+        const routeRequestId = String(params.get('request') || '').trim();
 
         if (!list) {
             return;
@@ -4995,35 +5688,47 @@
         let conversations = [];
         let messagesByConversation = {};
         let active = null;
+        let mobileChatOpen = Boolean(convoFromRoute);
+        const paymentDraftByConversation = {};
+        let positionEmojiPanel = function () {};
 
-        function dedupeConversationsByGuide(items) {
-            const source = Array.isArray(items) ? items : [];
-            const seen = new Map();
+        function isCompactViewport() {
+            return window.matchMedia('(max-width: 992px)').matches;
+        }
 
-            source.forEach(function (conversation) {
-                if (!conversation || typeof conversation !== 'object') {
-                    return;
-                }
+        function setConversationVisibility(showChat) {
+            if (!conversationPanel || !chatWindow) {
+                return;
+            }
 
-                const key = String(conversation.guideId || '').trim() || ('name:' + String(conversation.name || '').trim().toLowerCase());
-                if (!key) {
-                    return;
-                }
+            if (!isCompactViewport()) {
+                conversationPanel.style.display = '';
+                chatWindow.style.display = '';
+                return;
+            }
 
-                const existing = seen.get(key);
-                if (!existing) {
-                    seen.set(key, conversation);
-                    return;
-                }
+            conversationPanel.style.display = showChat ? 'none' : '';
+            chatWindow.style.display = showChat ? '' : 'none';
+        }
 
-                const existingTime = Date.parse(String(existing.time || '')) || 0;
-                const currentTime = Date.parse(String(conversation.time || '')) || 0;
-                if (currentTime >= existingTime) {
-                    seen.set(key, conversation);
-                }
+        function startGuideMessage(requestId, guideId) {
+            return apiRequest('/tourist/messages/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    tour_request_id: requestId || null,
+                    guide_id: guideId
+                })
             });
+        }
 
-            return Array.from(seen.values()).sort(function (left, right) {
+        function sortConversationsByLatest(items) {
+            const source = Array.isArray(items) ? items.slice() : [];
+            return source.sort(function (left, right) {
                 const leftTime = Date.parse(String((left && left.time) || '')) || 0;
                 const rightTime = Date.parse(String((right && right.time) || '')) || 0;
                 return rightTime - leftTime;
@@ -5040,7 +5745,10 @@
                 last: String(source.last || ''),
                 time: String(source.time || nowISO()),
                 unread: Number(source.unread || 0),
-                tourRequestId: source.tourRequestId ? String(source.tourRequestId) : ''
+                tourRequestId: source.tourRequestId ? String(source.tourRequestId) : '',
+                tourTitle: String(source.tourTitle || source.requestTitle || 'Tour request'),
+                budgetMin: Number(source.budgetMin || 0),
+                budgetMax: Number(source.budgetMax || 0)
             };
         }
 
@@ -5055,6 +5763,168 @@
                 isRead: Boolean(source.isRead),
                 createdAt: String(source.createdAt || nowISO())
             };
+        }
+
+        function paymentStatusLabel(status) {
+            const value = String(status || '').toLowerCase();
+            if (value === 'paid') {
+                return 'PAID';
+            }
+            if (value === 'pending_cash_on_tour') {
+                return 'Pending (Cash on Tour)';
+            }
+            return 'Not set';
+        }
+
+        function paymentActionLabel(method) {
+            return String(method || '') === 'Cash on Tour'
+                ? 'Mark as Pay on Tour'
+                : 'Pay Now';
+        }
+
+        function parsePaymentAmountFromText(text) {
+            const source = String(text || '').trim();
+            if (!source) {
+                return 0;
+            }
+
+            const pesoMatch = source.match(/₱\s*([\d,]+(?:\.\d{1,2})?)/i);
+            const plainMatch = source.match(/payment(?:\s+successful)?[:\s]*([\d,]+(?:\.\d{1,2})?)/i);
+            const match = pesoMatch || plainMatch;
+            if (!match || !match[1]) {
+                return 0;
+            }
+
+            const amount = Number(String(match[1]).replace(/,/g, ''));
+            return Number.isFinite(amount) && amount > 0 ? amount : 0;
+        }
+
+        function inferPaymentStateFromMessages(messages) {
+            const source = Array.isArray(messages) ? messages : [];
+
+            for (let index = source.length - 1; index >= 0; index -= 1) {
+                const message = source[index];
+                const text = String((message && message.text) || '').trim();
+                if (!text) {
+                    continue;
+                }
+
+                const lower = text.toLowerCase();
+                if (lower.includes('payment successful') || (lower.includes('payment of') && lower.includes('received from tourist'))) {
+                    return {
+                        status: 'paid',
+                        amount: parsePaymentAmountFromText(text),
+                        updatedAt: String((message && message.createdAt) || nowISO())
+                    };
+                }
+
+                if (lower.includes('pay during the tour') || lower.includes('cash on tour is pending completion')) {
+                    return {
+                        status: 'pending_cash_on_tour',
+                        amount: parsePaymentAmountFromText(text),
+                        updatedAt: String((message && message.createdAt) || nowISO())
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        function resolveConversationPaymentState(conversation, messages, requestPaymentStateIndex) {
+            if (!conversation || typeof conversation !== 'object') {
+                return inferPaymentStateFromMessages(messages);
+            }
+
+            const conversationId = String(conversation.id || '').trim();
+            let state = conversationId ? getConversationPaymentState(conversationId) : null;
+
+            if (!state) {
+                const requestId = String(conversation.tourRequestId || '').trim();
+                if (requestId) {
+                    const requestMap = requestPaymentStateIndex && typeof requestPaymentStateIndex === 'object'
+                        ? requestPaymentStateIndex
+                        : getRequestPaymentStateIndex();
+                    const candidate = requestMap[requestId];
+                    if (candidate && typeof candidate === 'object') {
+                        const conversationGuideId = String(conversation.guideId || '').trim();
+                        const candidateGuideId = String(candidate.guideId || '').trim();
+                        if (!conversationGuideId || !candidateGuideId || conversationGuideId === candidateGuideId) {
+                            state = candidate;
+                        }
+                    }
+                }
+            }
+
+            const normalizedStatus = String(state && state.status ? state.status : '').toLowerCase();
+            if (normalizedStatus === 'paid' || normalizedStatus === 'pending_cash_on_tour') {
+                return state;
+            }
+
+            return inferPaymentStateFromMessages(messages);
+        }
+
+        function renderConversationPaymentMeta(conversation, messages, requestPaymentStateIndex) {
+            const state = resolveConversationPaymentState(conversation, messages, requestPaymentStateIndex);
+            const status = String(state && state.status ? state.status : '').toLowerCase();
+            if (status !== 'paid' && status !== 'pending_cash_on_tour') {
+                return '';
+            }
+
+            const paid = status === 'paid';
+            const amount = Number(state && state.amount ? state.amount : 0);
+            const badgeClass = paid ? 'paid' : 'pending';
+            const badgeText = paid ? 'Paid' : 'Payment Pending';
+            const amountText = amount > 0
+                ? formatSimulatedPeso(amount) + (paid ? ' paid' : ' pending')
+                : (paid ? 'Payment received' : 'Awaiting payment');
+
+            return [
+                '<div class="conversation-payment-meta">',
+                '<span class="conversation-payment-badge ', badgeClass, '">', escapeHtml(badgeText), '</span>',
+                '<span class="conversation-payment-amount ', badgeClass, '">', escapeHtml(amountText), '</span>',
+                '</div>'
+            ].join('');
+        }
+
+        function toSimulatedThreadMessage(event) {
+            const source = event && typeof event === 'object' ? event : {};
+            const role = String(source.authorRole || 'system').toLowerCase();
+            const mine = role === 'tourist';
+            return {
+                id: 'sim-' + String(source.id || uid('sim-msg')),
+                mine: mine,
+                text: sanitizePaymentCopy(source.text),
+                senderId: role,
+                senderAvatar: '',
+                isRead: true,
+                createdAt: String(source.createdAt || nowISO())
+            };
+        }
+
+        function getMergedConversationMessages(conversationId) {
+            const key = String(conversationId || '').trim();
+            if (!key) {
+                return [];
+            }
+
+            const persisted = (messagesByConversation[key] || []).slice();
+            const simulated = getSimulatedChatEventsByConversation(key).map(toSimulatedThreadMessage);
+            const merged = persisted.concat(simulated);
+            const seen = new Set();
+            return merged
+                .filter(function (item) {
+                    const id = String(item && item.id ? item.id : '');
+                    if (!id || seen.has(id)) {
+                        return false;
+                    }
+                    seen.add(id);
+                    return true;
+                })
+                .sort(function (left, right) {
+                    const leftTime = Date.parse(String((left && left.createdAt) || '')) || 0;
+                    const rightTime = Date.parse(String((right && right.createdAt) || '')) || 0;
+                    return leftTime - rightTime;
+                });
         }
 
         function findMineAvatar(conversationId) {
@@ -5085,21 +5955,267 @@
                 : dt.toLocaleDateString([], { month: 'short', day: 'numeric' });
         }
 
+        function renderPaymentCard() {
+            if (!paymentCardHost) {
+                return;
+            }
+
+            if (!active) {
+                paymentCardHost.innerHTML = '';
+                return;
+            }
+
+            const activeKey = String(active.id || '');
+            if (!activeKey) {
+                paymentCardHost.innerHTML = '';
+                return;
+            }
+
+            const storedState = getConversationPaymentState(activeKey);
+            const draft = paymentDraftByConversation[activeKey] || {};
+            const selectedMethod = String(storedState && storedState.paymentMethod ? storedState.paymentMethod : (draft.paymentMethod || 'GCash'));
+            const amountValue = storedState && Number(storedState.amount || 0) > 0
+                ? String(storedState.amount)
+                : String(draft.amount || '');
+            const stateValue = String(storedState && storedState.status ? storedState.status : '').toLowerCase();
+            const locked = stateValue === 'paid';
+            const suggestedRange = Number(active.budgetMin || 0) > 0 || Number(active.budgetMax || 0) > 0
+                ? formatSimulatedPeso(Number(active.budgetMin || 0)) + ' - ' + formatSimulatedPeso(Number(active.budgetMax || 0))
+                : '';
+
+            paymentCardHost.innerHTML = [
+                '<article class="chat-payment-card">',
+                '<h2 class="chat-payment-title">Pay for your tour request: ', escapeHtml(active.tourTitle || 'Tour request'), '</h2>',
+                '<p class="chat-payment-tour">Conversation with ', escapeHtml(active.name || 'Guide'), '</p>',
+                '<div class="chat-payment-row">',
+                '<div>',
+                '<label class="field-label" for="chatPaymentAmount">Amount</label>',
+                '<input id="chatPaymentAmount" class="input-soft" type="text" inputmode="decimal" placeholder="₱0.00" value="', escapeHtml(amountValue), '" data-chat-payment-amount>',
+                '</div>',
+                '<div>',
+                '<label class="field-label" for="chatPaymentMethod">Payment Method</label>',
+                '<select id="chatPaymentMethod" class="select-soft" data-chat-payment-method>',
+                '<option value="GCash"', selectedMethod === 'GCash' ? ' selected' : '', '>GCash</option>',
+                '<option value="Bank Transfer"', selectedMethod === 'Bank Transfer' ? ' selected' : '', '>Bank Transfer</option>',
+                '<option value="Credit Card"', selectedMethod === 'Credit Card' ? ' selected' : '', '>Credit Card</option>',
+                '<option value="Cash on Tour"', selectedMethod === 'Cash on Tour' ? ' selected' : '', '>Cash on Tour</option>',
+                '</select>',
+                '</div>',
+                '<button type="button" class="btn-gold" data-chat-payment-submit>',
+                escapeHtml(paymentActionLabel(selectedMethod)),
+                '</button>',
+                '</div>',
+                suggestedRange ? '<p class="chat-payment-help">Suggested range from request: ' + escapeHtml(suggestedRange) + '</p>' : '',
+                storedState ? '<div class="chat-payment-status"><span class="chat-payment-badge ' + (stateValue === 'paid' ? 'paid' : 'pending') + '">' + escapeHtml(paymentStatusLabel(stateValue)) + '</span><p class="chat-payment-summary">' + escapeHtml(formatSimulatedPeso(Number(storedState.amount || 0)) + ' via ' + String(storedState.paymentMethod || 'N/A')) + '</p></div>' : '',
+                '</article>'
+            ].join('');
+
+            const amountInput = qs('[data-chat-payment-amount]', paymentCardHost);
+            const methodSelect = qs('[data-chat-payment-method]', paymentCardHost);
+            const submitBtn = qs('[data-chat-payment-submit]', paymentCardHost);
+
+            if (!amountInput || !methodSelect || !submitBtn) {
+                return;
+            }
+
+            if (locked) {
+                amountInput.disabled = true;
+                methodSelect.disabled = true;
+                submitBtn.disabled = true;
+                return;
+            }
+
+            const refreshButtonText = function () {
+                submitBtn.textContent = paymentActionLabel(methodSelect.value);
+            };
+
+            amountInput.addEventListener('input', function () {
+                paymentDraftByConversation[activeKey] = Object.assign({}, paymentDraftByConversation[activeKey] || {}, {
+                    amount: amountInput.value,
+                    paymentMethod: methodSelect.value
+                });
+            });
+
+            methodSelect.addEventListener('change', function () {
+                paymentDraftByConversation[activeKey] = Object.assign({}, paymentDraftByConversation[activeKey] || {}, {
+                    amount: amountInput.value,
+                    paymentMethod: methodSelect.value
+                });
+                refreshButtonText();
+            });
+
+            submitBtn.addEventListener('click', function () {
+                const amount = parseSimulatedAmount(amountInput.value);
+                if (!(amount > 0)) {
+                    showToast('Enter a valid amount before continuing.', 'warning');
+                    amountInput.focus();
+                    return;
+                }
+
+                const paymentMethod = String(methodSelect.value || 'GCash');
+                const status = paymentMethod === 'Cash on Tour' ? 'pending_cash_on_tour' : 'paid';
+                const paymentRecord = saveConversationPaymentState(activeKey, {
+                    requestId: active.tourRequestId ? String(active.tourRequestId) : '',
+                    guideId: active.guideId ? String(active.guideId) : '',
+                    guideName: String(active.name || 'Guide'),
+                    tourTitle: String(active.tourTitle || 'Tour request'),
+                    budgetMin: Number(active.budgetMin || 0),
+                    budgetMax: Number(active.budgetMax || 0),
+                    amount: amount,
+                    paymentMethod: paymentMethod,
+                    status: status,
+                    paidAt: status === 'paid' ? nowISO() : null,
+                });
+
+                if (paymentRecord && paymentRecord.requestId) {
+                    updateTouristRequestPaymentSnapshot(paymentRecord.requestId, paymentRecord);
+                }
+
+                const account = getCachedAccountData();
+                const touristName = String(
+                    (account && account.account && account.account.name)
+                    || (account && account.name)
+                    || 'Tourist'
+                ).trim() || 'Tourist';
+                const touristAvatar = normalizeGuideAssetPath(
+                    (account && account.account && account.account.avatar)
+                    || (account && account.avatar)
+                    || 'images/manila.jpg'
+                );
+
+                const transactionPayload = {
+                    conversationId: activeKey,
+                    requestId: paymentRecord && paymentRecord.requestId ? paymentRecord.requestId : '',
+                    guideId: paymentRecord && paymentRecord.guideId ? paymentRecord.guideId : '',
+                    guideName: paymentRecord && paymentRecord.guideName ? paymentRecord.guideName : (active.name || 'Guide'),
+                    touristName: touristName,
+                    touristAvatar: touristAvatar,
+                    tourTitle: paymentRecord && paymentRecord.tourTitle ? paymentRecord.tourTitle : (active.tourTitle || 'Tour request'),
+                    amount: amount,
+                    paymentMethod: paymentMethod,
+                    status: status,
+                    paidAt: status === 'paid' ? nowISO() : null,
+                    date: nowISO(),
+                };
+
+                if (status === 'paid') {
+                    showToast('Payment Successful', 'success');
+                    upsertSimulatedPaymentTransaction(transactionPayload);
+
+                    const paymentMessageText = 'Payment Successful: ' + formatSimulatedPeso(amount) + ' paid via ' + paymentMethod + '.';
+                    apiRequest('/tourist/messages/threads/' + encodeURIComponent(activeKey), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': getCsrfToken()
+                        },
+                        body: JSON.stringify({ body: paymentMessageText })
+                    }).then(function (data) {
+                        const sentMessage = data && data.message ? normalizeMessage(data.message) : null;
+                        if (!sentMessage) {
+                            return;
+                        }
+
+                        const currentList = messagesByConversation[activeKey] || [];
+                        const alreadyExists = currentList.some(function (message) {
+                            return String(message.id) === String(sentMessage.id);
+                        });
+                        if (!alreadyExists) {
+                            messagesByConversation[activeKey] = currentList.concat([sentMessage]);
+                        }
+
+                        active.last = sentMessage.text || paymentMessageText;
+                        active.time = sentMessage.createdAt || nowISO();
+                        renderConversation();
+                        renderList();
+                        syncThreads();
+                    }).catch(function () {
+                        // Fallback keeps the payment visible locally if the API call fails.
+                        addSimulatedChatEvent({
+                            conversationId: activeKey,
+                            authorRole: 'system',
+                            text: 'Payment of ' + formatSimulatedPeso(amount) + ' received from Tourist',
+                            createdAt: nowISO()
+                        });
+                        renderConversation();
+                        renderList();
+                    });
+                } else {
+                    showToast('Marked as Pay on Tour', 'secondary');
+                    addSimulatedChatEvent({
+                        conversationId: activeKey,
+                        authorRole: 'tourist',
+                        text: 'You will pay during the tour. Awaiting guide completion.',
+                        createdAt: nowISO()
+                    });
+                    upsertSimulatedPaymentTransaction(transactionPayload);
+                }
+
+                delete paymentDraftByConversation[activeKey];
+                renderConversation();
+                renderList();
+            });
+        }
+
+        function ensureConversationFromGuideRoute() {
+            if (!routeGuideId || convoFromRoute) {
+                return Promise.resolve();
+            }
+
+            return startGuideMessage(routeRequestId || null, routeGuideId).then(function (result) {
+                let conversationId = result && result.conversationId ? String(result.conversationId) : '';
+                if (!conversationId && result && result.redirect) {
+                    try {
+                        const redirectUrl = new URL(String(result.redirect), window.location.origin);
+                        conversationId = String(redirectUrl.searchParams.get('conversation') || '');
+                    } catch (_error) {
+                        conversationId = '';
+                    }
+                }
+
+                if (conversationId) {
+                    convoFromRoute = conversationId;
+                    mobileChatOpen = true;
+                    const nextSearch = new URLSearchParams();
+                    nextSearch.set('conversation', conversationId);
+                    if (routeRequestId) {
+                        nextSearch.set('request', routeRequestId);
+                    }
+                    const nextPath = '/messages/' + encodeURIComponent(routeGuideId);
+                    window.history.replaceState({}, '', nextPath + '?' + nextSearch.toString());
+                }
+            }).catch(function () {
+                return null;
+            });
+        }
+
         function syncThreads() {
             return apiRequest('/tourist/messages/threads').then(function (data) {
                 const incoming = data && Array.isArray(data.conversations) ? data.conversations : [];
-                conversations = dedupeConversationsByGuide(incoming.map(normalizeConversation));
+                conversations = sortConversationsByLatest(incoming.map(normalizeConversation));
                 if (!active) {
                     active = conversations.find(function (conversation) {
                         return String(conversation.id) === String(convoFromRoute || '');
                     }) || conversations[0] || null;
                 } else {
                     const match = conversations.find(function (conversation) {
-                        return String(conversation.id) === String(active.id)
-                            || (conversation.guideId && active.guideId && String(conversation.guideId) === String(active.guideId));
+                        return String(conversation.id) === String(active.id);
                     });
                     if (match) {
                         active = match;
+                    }
+                }
+
+                if (active && routeRequestId) {
+                    active.tourRequestId = String(routeRequestId);
+                    const activeIndex = conversations.findIndex(function (conversation) {
+                        return String(conversation.id) === String(active.id);
+                    });
+                    if (activeIndex >= 0) {
+                        conversations[activeIndex] = Object.assign({}, conversations[activeIndex], {
+                            tourRequestId: String(routeRequestId)
+                        });
                     }
                 }
 
@@ -5109,10 +6225,14 @@
                 } else {
                     chatTitle.textContent = 'No conversations yet';
                     chatMessages.innerHTML = '<div class="small text-muted p-3">Start by selecting a guide from My Posts.</div>';
+                    setConversationVisibility(false);
+                    renderPaymentCard();
                 }
             }).catch(function () {
                 chatTitle.textContent = 'Messages unavailable';
                 chatMessages.innerHTML = '<div class="small text-muted p-3">Unable to load messages right now.</div>';
+                setConversationVisibility(false);
+                renderPaymentCard();
             });
         }
 
@@ -5124,16 +6244,19 @@
                     return;
                 }
 
+                if (routeRequestId && routeGuideId && String(conversation.guideId || '') === String(routeGuideId)) {
+                    conversation.tourRequestId = String(routeRequestId);
+                }
+
                 messagesByConversation[String(conversation.id)] = messages;
                 const idx = conversations.findIndex(function (item) {
-                    return String(item.id) === String(conversation.id)
-                        || (item.guideId && conversation.guideId && String(item.guideId) === String(conversation.guideId));
+                    return String(item.id) === String(conversation.id);
                 });
                 if (idx >= 0) {
                     conversations[idx] = Object.assign({}, conversations[idx], conversation, { unread: 0 });
                 } else {
                     conversations.unshift(conversation);
-                    conversations = dedupeConversationsByGuide(conversations);
+                    conversations = sortConversationsByLatest(conversations);
                 }
                 active = Object.assign({}, conversation, { unread: 0 });
                 renderList();
@@ -5146,8 +6269,14 @@
         function renderList() {
             const query = String(searchInput ? searchInput.value : '').trim().toLowerCase();
             list.innerHTML = '';
+            const requestPaymentStateIndex = getRequestPaymentStateIndex();
             conversations.forEach(function (conversation) {
-                const haystack = String((conversation.name || '') + ' ' + (conversation.last || '')).toLowerCase();
+                const merged = getMergedConversationMessages(conversation.id);
+                const tailMessage = merged.length ? merged[merged.length - 1] : null;
+                const tailText = tailMessage ? tailMessage.text : (conversation.last || '');
+                const tailTime = tailMessage ? tailMessage.createdAt : conversation.time;
+                const paymentMeta = renderConversationPaymentMeta(conversation, merged, requestPaymentStateIndex);
+                const haystack = String((conversation.name || '') + ' ' + (tailText || '')).toLowerCase();
                 if (query && haystack.indexOf(query) === -1) {
                     return;
                 }
@@ -5156,9 +6285,10 @@
                 row.dataset.id = conversation.id;
                 row.innerHTML = [
                     '<img class="conversation-avatar" src="', escapeHtml(normalizeGuideAssetPath(conversation.avatar || 'images/manila.jpg')), '" alt="', escapeHtml(conversation.name || 'Guide'), '">',
-                    '<div class="flex-grow-1">',
-                    '<div class="d-flex justify-content-between"><strong>', escapeHtml(conversation.name || 'Guide'), '</strong><small class="text-muted">', escapeHtml(formatShortTime(conversation.time)), '</small></div>',
-                    '<div class="small text-muted text-truncate" style="max-width:180px;">', escapeHtml(conversation.last || ''), '</div>',
+                    '<div class="conversation-card-content">',
+                    '<div class="d-flex justify-content-between"><strong>', escapeHtml(conversation.name || 'Guide'), '</strong><small class="text-muted">', escapeHtml(formatShortTime(tailTime)), '</small></div>',
+                    paymentMeta,
+                    '<div class="small text-muted text-truncate" style="max-width:180px;">', escapeHtml(tailText || ''), '</div>',
                     '</div>',
                     Number(conversation.unread || 0) > 0 ? '<span class="badge rounded-pill text-bg-warning">' + String(conversation.unread) + '</span>' : ''
                 ].join('');
@@ -5170,12 +6300,15 @@
             if (!active) {
                 chatTitle.textContent = 'Select a conversation';
                 chatMessages.innerHTML = '';
+                setConversationVisibility(false);
+                renderPaymentCard();
                 return;
             }
 
+            setConversationVisibility(Boolean(mobileChatOpen));
             chatTitle.textContent = active.name || 'Guide';
             chatMessages.innerHTML = '';
-            const messages = messagesByConversation[String(active.id)] || [];
+            const messages = getMergedConversationMessages(String(active.id));
             const lastMine = messages.slice().reverse().find(function (message) {
                 return message.mine;
             });
@@ -5201,6 +6334,7 @@
                 chatMessages.appendChild(row);
             });
             chatMessages.scrollTop = chatMessages.scrollHeight;
+            renderPaymentCard();
         }
 
         list.addEventListener('click', function (event) {
@@ -5215,9 +6349,43 @@
                 return;
             }
             active = found;
+            mobileChatOpen = true;
             renderList();
             loadConversation(active.id);
         });
+
+        if (chatBackBtn) {
+            chatBackBtn.addEventListener('click', function () {
+                mobileChatOpen = false;
+                setConversationVisibility(false);
+                if (conversationPanel) {
+                    conversationPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
+        }
+
+        if (chatShowListBtn) {
+            chatShowListBtn.addEventListener('click', function () {
+                mobileChatOpen = false;
+                setConversationVisibility(false);
+                if (conversationPanel) {
+                    conversationPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
+        }
+
+        if (chatRefreshBtn) {
+            chatRefreshBtn.addEventListener('click', function () {
+                if (active && active.id) {
+                    loadConversation(active.id).then(function () {
+                        syncThreads();
+                    });
+                    return;
+                }
+
+                syncThreads();
+            });
+        }
 
         chatForm.addEventListener('submit', function (event) {
             event.preventDefault();
@@ -5274,24 +6442,57 @@
             });
         });
 
-        emojiToggle.addEventListener('click', function () {
-            emojiPanel.style.display = emojiPanel.style.display === 'block' ? 'none' : 'block';
+        if (emojiToggle && emojiPanel) {
+            positionEmojiPanel = function () {
+                const toggleRect = emojiToggle.getBoundingClientRect();
+                const panelRect = emojiPanel.getBoundingClientRect();
+                const panelWidth = Number(panelRect.width || 190);
+
+                let left = toggleRect.left;
+                left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
+                const top = toggleRect.bottom + 8;
+
+                emojiPanel.style.position = 'fixed';
+                emojiPanel.style.left = Math.round(left) + 'px';
+                emojiPanel.style.top = Math.round(top) + 'px';
+                emojiPanel.style.right = 'auto';
+                emojiPanel.style.bottom = 'auto';
+            };
+
+            emojiToggle.addEventListener('click', function () {
+                const opening = emojiPanel.style.display !== 'block';
+                emojiPanel.style.display = opening ? 'block' : 'none';
+                if (opening) {
+                    positionEmojiPanel();
+                }
+            });
+
+            emojiPanel.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-emoji]');
+                if (!button) {
+                    return;
+                }
+                chatInput.value += button.dataset.emoji;
+                chatInput.focus();
+            });
+
+            document.addEventListener('click', function (event) {
+                const target = event.target;
+                const clickedToggle = target && target.closest ? target.closest('#emojiToggle') : null;
+                if (!emojiPanel.contains(target) && !clickedToggle) {
+                    emojiPanel.style.display = 'none';
+                }
+            });
+        }
+
+        window.addEventListener('resize', function () {
+            setConversationVisibility(Boolean(active) && Boolean(mobileChatOpen));
+            if (emojiPanel && emojiPanel.style.display === 'block') {
+                positionEmojiPanel();
+            }
         });
 
-        emojiPanel.addEventListener('click', function (event) {
-            const button = event.target.closest('[data-emoji]');
-            if (!button) {
-                return;
-            }
-            chatInput.value += button.dataset.emoji;
-            chatInput.focus();
-        });
-
-        document.addEventListener('click', function (event) {
-            if (!emojiPanel.contains(event.target) && event.target !== emojiToggle) {
-                emojiPanel.style.display = 'none';
-            }
-        });
+        setConversationVisibility(Boolean(active) && Boolean(mobileChatOpen));
 
         if (searchInput) {
             searchInput.addEventListener('input', debounce(renderList, 180));
@@ -5346,7 +6547,26 @@
             });
         });
 
-        syncThreads();
+        window.addEventListener('storage', function (event) {
+            if (!event) {
+                return;
+            }
+
+            if (
+                event.key === CHAT_PAYMENT_STATE_KEY
+                || event.key === CHAT_PAYMENT_TRANSACTIONS_KEY
+                || event.key === CHAT_SIMULATED_EVENTS_KEY
+            ) {
+                renderList();
+                if (active) {
+                    renderConversation();
+                }
+            }
+        });
+
+        ensureConversationFromGuideRoute().finally(function () {
+            syncThreads();
+        });
     }
 
     function initProfilePage() {
@@ -5699,6 +6919,54 @@
     }
 
     function initGlobalActions() {
+        qsa('.hamburger-dropdown').forEach(function (menu) {
+            qsa('li', menu).forEach(function (item) {
+                const dropdownItem = qs('.dropdown-item', item);
+                if (!dropdownItem) {
+                    return;
+                }
+
+                const hasBellIcon = Boolean(qs('.fa-bell', dropdownItem));
+                const label = String(dropdownItem.textContent || '').toLowerCase();
+                if (hasBellIcon || label.includes('notification')) {
+                    item.remove();
+                }
+            });
+
+            if (!qs('[data-hamburger-logout]', menu)) {
+                const divider = document.createElement('li');
+                divider.innerHTML = '<hr class="dropdown-divider">';
+
+                const logoutItem = document.createElement('li');
+                logoutItem.innerHTML = '<button class="dropdown-item text-danger" type="button" data-hamburger-logout><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button>';
+
+                menu.appendChild(divider);
+                menu.appendChild(logoutItem);
+            }
+
+            if (menu.dataset.boundLogoutAction === 'true') {
+                return;
+            }
+
+            menu.addEventListener('click', function (event) {
+                const clickedItem = event.target.closest('.dropdown-item');
+                if (clickedItem) {
+                    document.body.classList.remove('sidebar-open');
+                }
+
+                const logoutItem = event.target.closest('[data-hamburger-logout]');
+                if (!logoutItem) {
+                    return;
+                }
+
+                event.preventDefault();
+                closeContainingDropdown(logoutItem);
+                logoutToAuthPage();
+            });
+
+            menu.dataset.boundLogoutAction = 'true';
+        });
+
         const logout = qs('#logoutBtn');
         if (logout) {
             logout.addEventListener('click', function (event) {

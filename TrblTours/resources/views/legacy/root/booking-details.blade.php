@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
 </head>
 
-<body class="account-page" data-page="my-bookings" data-view="booking-details" data-require-auth="true">
+<body class="account-page" data-page="my-bookings" data-view="booking-details" data-require-auth="true" data-booking-detail-mode="{{ isset($bookingDetail) ? 'view' : 'create' }}">
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="app-root">
         <aside class="sidebar" id="sidebar">
@@ -71,6 +71,9 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.TRBL_BOOKING_DETAIL = @json($bookingDetail ?? null);
+    </script>
     <script src="{{ asset('assets/app.js') }}"></script>
 </body>
 

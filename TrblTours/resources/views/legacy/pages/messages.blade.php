@@ -89,19 +89,43 @@
                     <article class="chat-window position-relative">
                         <header class="chat-header">
                             <div class="d-flex align-items-center gap-2">
-                                <strong id="chatTitle">Select a conversation</strong>
+                                <button id="chatBackBtn" class="btn btn-light d-lg-none" type="button" aria-label="Back to conversations"><i class="fa-solid fa-arrow-left"></i></button>
+                                <div>
+                                    <strong id="chatTitle">Select a conversation</strong>
+                                    <small id="chatSubTitle" class="text-muted d-block">No active thread</small>
+                                </div>
                             </div>
-                            <small id="chatSubTitle" class="text-muted">No active thread</small>
+                            <div class="dropdown">
+                                <button id="chatMenuBtn" class="btn btn-light" type="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Conversation actions">
+                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end">
+                                    <button class="dropdown-item" type="button" data-chat-refresh>Refresh conversation</button>
+                                    <button class="dropdown-item d-lg-none" type="button" data-chat-show-list>Back to conversations</button>
+                                </div>
+                            </div>
                         </header>
 
                         <div class="chat-messages" id="chatMessages"></div>
                         <div id="typingIndicator" class="typing-indicator"><i class="fa-solid fa-ellipsis"></i> Tourist is typing...</div>
+                        <section id="chatPaymentCardHost" class="chat-payment-host"></section>
 
                         <form id="chatForm" class="chat-input">
-                            <button class="btn btn-light" type="button" disabled><i class="fa-regular fa-face-smile"></i></button>
+                            <button id="emojiToggle" class="btn btn-light" type="button"><i class="fa-regular fa-face-smile"></i></button>
                             <input id="chatInput" class="input-soft" type="text" placeholder="Type your message">
                             <button class="btn-gold" type="submit"><i class="fa-solid fa-paper-plane"></i></button>
                         </form>
+
+                        <div id="emojiPanel" class="emoji-panel">
+                            <button type="button" data-emoji="😀">😀</button>
+                            <button type="button" data-emoji="😍">😍</button>
+                            <button type="button" data-emoji="👍">👍</button>
+                            <button type="button" data-emoji="✨">✨</button>
+                            <button type="button" data-emoji="🙏">🙏</button>
+                            <button type="button" data-emoji="🌴">🌴</button>
+                            <button type="button" data-emoji="🏔️">🏔️</button>
+                            <button type="button" data-emoji="📍">📍</button>
+                        </div>
                     </article>
                 </section>
             </main>

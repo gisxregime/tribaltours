@@ -21,7 +21,7 @@ class BookingController extends Controller
 {
     public function index(Request $request): View|JsonResponse
     {
-        $query = $request->user()->bookingsAsTourist()->with(['tourListing', 'guide.guideProfile', 'reviews'])->latest();
+        $query = $request->user()->bookingsAsTourist()->with(['tourListing', 'tourRequest', 'guide.guideProfile', 'reviews'])->latest();
 
         if ($request->expectsJson() || $request->wantsJson()) {
             $bookings = $query->limit(120)->get()->map(function (Booking $booking) {
@@ -42,7 +42,7 @@ class BookingController extends Controller
     public function mine(Request $request): JsonResponse
     {
         $bookings = $request->user()->bookingsAsTourist()
-            ->with(['tourListing', 'guide.guideProfile', 'reviews'])
+            ->with(['tourListing', 'tourRequest', 'guide.guideProfile', 'reviews'])
             ->latest()
             ->limit(120)
             ->get()
@@ -168,6 +168,10 @@ class BookingController extends Controller
             'booked_for_time' => ['nullable', 'string', 'max:60'],
             'guest_count' => ['nullable', 'integer', 'min:1', 'max:100'],
             'notes' => ['nullable', 'string'],
+            'traveler_full_name' => ['nullable', 'string', 'max:150'],
+            'traveler_email' => ['nullable', 'email', 'max:190'],
+            'traveler_phone' => ['nullable', 'string', 'max:60'],
+            'traveler_emergency_contact' => ['nullable', 'string', 'max:150'],
             'client_token' => ['nullable', 'string', 'max:120'],
             'payment_status' => ['nullable', 'in:unpaid,partial,paid,refunded'],
             'payment_method' => ['nullable', 'string', 'max:120'],
@@ -216,6 +220,10 @@ class BookingController extends Controller
             'status' => 'pending',
             'reservation_type' => $listing->reservation_type,
             'notes' => $payload['notes'] ?? null,
+            'traveler_full_name' => isset($payload['traveler_full_name']) ? trim((string) $payload['traveler_full_name']) : null,
+            'traveler_email' => isset($payload['traveler_email']) ? trim((string) $payload['traveler_email']) : null,
+            'traveler_phone' => isset($payload['traveler_phone']) ? trim((string) $payload['traveler_phone']) : null,
+            'traveler_emergency_contact' => isset($payload['traveler_emergency_contact']) ? trim((string) $payload['traveler_emergency_contact']) : null,
             'paid_at' => $paymentStatus === 'paid' ? now() : null,
         ]);
 
@@ -259,7 +267,20 @@ class BookingController extends Controller
     {
         abort_unless($booking->tourist_id === Auth::id(), 403);
 
-        return view('legacy.root.booking-details', ['booking' => $booking->load(['tourListing', 'guide'])]);
+        $booking->load(['tourListing', 'guide', 'tourist']);
+        $detail = $this->presentBooking($booking);
+        $detail['traveler'] = [
+            'fullName' => trim((string) ($booking->traveler_full_name ?? $booking->tourist?->name ?? '')),
+            'email' => trim((string) ($booking->traveler_email ?? $booking->tourist?->email ?? '')),
+            'phone' => trim((string) ($booking->traveler_phone ?? $booking->tourist?->phone ?? '')),
+            'emergency' => trim((string) ($booking->traveler_emergency_contact ?? '')),
+            'notes' => trim((string) ($booking->notes ?? '')),
+        ];
+
+        return view('tourist.booking-details', [
+            'booking' => $booking,
+            'bookingDetail' => $detail,
+        ]);
     }
 
     public function edit(Booking $booking): View
@@ -331,6 +352,15 @@ class BookingController extends Controller
                     'message' => 'Only booked tours can be marked completed.',
                 ], 422);
             }
+
+            if (!$this->canTouristMarkCompleted($booking)) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'You can only mark this booking completed once the scheduled booking date/time is reached.',
+                    'completionSecondsLeft' => $this->completionSecondsLeft($booking),
+                ], 422);
+            }
+
             $booking->status = 'completed';
             $booking->completed_at = Carbon::now();
         }
@@ -435,6 +465,7 @@ class BookingController extends Controller
     private function presentBooking(Booking $booking): array
     {
         $listing = $booking->tourListing;
+        $requestSource = $booking->tourRequest;
         $guide = $booking->guide;
         $guideProfile = $guide?->guideProfile;
         $review = $booking->relationLoaded('reviews')
@@ -442,6 +473,8 @@ class BookingController extends Controller
             : $booking->reviews()->latest('id')->first();
         $cancellableUntil = optional($booking->created_at)->copy()?->addDay();
         $secondsLeft = $this->cancellationSecondsLeft($booking);
+        $scheduledAt = $this->bookingScheduledAt($booking);
+        $completionSecondsLeft = $this->completionSecondsLeft($booking);
 
         $state = match ($booking->status) {
             'accepted', 'confirmed' => 'booked',
@@ -450,15 +483,31 @@ class BookingController extends Controller
             default => 'pending',
         };
 
-        $coverImage = $this->normalizeAssetPath($listing?->cover_image_path, 'images/pangasinan.jpg');
+        $requestMetadata = is_array($requestSource?->metadata) ? $requestSource->metadata : [];
+        $requestImage = trim((string) ($requestMetadata['image'] ?? $requestMetadata['coverImage'] ?? ''));
+        $coverImage = $this->normalizeAssetPath($listing?->cover_image_path ?: $requestImage, 'images/pangasinan.jpg');
         $guideAvatar = $this->normalizeAssetPath($guide?->avatar_path, 'images/manila.jpg');
+        $listingLocation = trim(implode(', ', array_filter([
+            trim((string) ($listing?->city ?? '')),
+            trim((string) ($listing?->province ?? '')),
+        ])));
+        $requestLocation = trim(implode(', ', array_filter([
+            trim((string) ($requestSource?->city ?? '')),
+            trim((string) ($requestSource?->province ?? '')),
+        ])));
+        $resolvedTourTitle = trim((string) ($listing?->title ?? $requestSource?->title ?? 'Custom Tour Booking'));
+        $resolvedTourLocation = $listingLocation !== '' ? $listingLocation : $requestLocation;
 
         return [
             'id' => (string) $booking->id,
             'bookingId' => (string) $booking->id,
             'reference' => (string) $booking->booking_reference,
             'tourId' => $listing ? (string) $listing->id : '',
-            'tourTitle' => (string) ($listing->title ?? 'Custom Tour Booking'),
+            'tourRequestId' => $requestSource ? (string) $requestSource->id : '',
+            'tourPreviewUrl' => $listing ? route('tour-preview', ['tour' => (string) $listing->id]) : '',
+            'bookingDetailsUrl' => route('tourist.bookings.show', ['booking' => $booking->id]),
+            'tourTitle' => $resolvedTourTitle !== '' ? $resolvedTourTitle : 'Custom Tour Booking',
+            'tourLocation' => $resolvedTourLocation,
             'image' => $coverImage,
             'guideName' => trim((string) ($guide->name ?? 'Guide')),
             'guideAvatar' => $guideAvatar,
@@ -468,13 +517,27 @@ class BookingController extends Controller
             'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
             'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
             'bookingDate' => optional($booking->booked_for_date)->toDateString(),
+            'bookingTime' => (string) ($booking->booked_for_time ?? ''),
+            'bookingDateTime' => $scheduledAt?->toISOString(),
+            'hasBookingSchedule' => $scheduledAt !== null,
             'guestCount' => (int) ($booking->guest_count ?? 1),
+            'priceSnapshot' => (float) ($booking->price_snapshot ?? 0),
             'total' => (float) ($booking->total_amount ?? 0),
             'paymentStatus' => (string) ($booking->payment_status ?? 'unpaid'),
             'paymentMethod' => (string) ($booking->payment_method ?? ''),
             'paymentReference' => (string) ($booking->payment_reference ?? ''),
+            'notes' => (string) ($booking->notes ?? ''),
+            'traveler' => [
+                'fullName' => (string) ($booking->traveler_full_name ?? ''),
+                'email' => (string) ($booking->traveler_email ?? ''),
+                'phone' => (string) ($booking->traveler_phone ?? ''),
+                'emergency' => (string) ($booking->traveler_emergency_contact ?? ''),
+            ],
             'status' => (string) ($booking->status ?? 'pending'),
             'state' => $state,
+            'isCompletable' => $this->canTouristMarkCompleted($booking),
+            'completionSecondsLeft' => $completionSecondsLeft,
+            'completionAvailableAt' => $scheduledAt?->toISOString(),
             'hasReview' => $review !== null,
             'review' => $review ? $this->presentReview($review) : null,
             'cancellableUntil' => $cancellableUntil?->toISOString(),
@@ -540,7 +603,66 @@ class BookingController extends Controller
             return 0;
         }
 
-        return max(0, now()->diffInSeconds($windowEnd, false));
+        return max(0, (int) floor((float) now()->diffInSeconds($windowEnd, false)));
+    }
+
+    private function canTouristMarkCompleted(Booking $booking): bool
+    {
+        if (!in_array((string) $booking->status, ['accepted', 'confirmed'], true)) {
+            return false;
+        }
+
+        if ($this->bookingScheduledAt($booking) === null) {
+            return false;
+        }
+
+        return $this->completionSecondsLeft($booking) <= 0;
+    }
+
+    private function completionSecondsLeft(Booking $booking): int
+    {
+        $scheduledAt = $this->bookingScheduledAt($booking);
+        if (!$scheduledAt) {
+            return 0;
+        }
+
+        return max(0, (int) floor((float) now()->diffInSeconds($scheduledAt, false)));
+    }
+
+    private function bookingScheduledAt(Booking $booking): ?Carbon
+    {
+        $date = $booking->booked_for_date;
+        if (!$date) {
+            return null;
+        }
+
+        $base = $date instanceof \DateTimeInterface
+            ? Carbon::instance($date)->startOfDay()
+            : Carbon::parse((string) $date)->startOfDay();
+        $rawTime = trim((string) ($booking->booked_for_time ?? ''));
+        if ($rawTime === '') {
+            return $base->copy()->endOfDay();
+        }
+
+        $formats = ['h:i A', 'g:i A', 'H:i', 'H:i:s'];
+        foreach ($formats as $format) {
+            try {
+                $parsed = Carbon::createFromFormat($format, $rawTime);
+                if ($parsed !== false) {
+                    return $base->copy()->setTime((int) $parsed->format('H'), (int) $parsed->format('i'), (int) $parsed->format('s'));
+                }
+            } catch (\Throwable $_error) {
+                // Try the next format.
+            }
+        }
+
+        try {
+            $parsed = Carbon::parse($rawTime);
+
+            return $base->copy()->setTime((int) $parsed->format('H'), (int) $parsed->format('i'), (int) $parsed->format('s'));
+        } catch (\Throwable $_error) {
+            return $base->copy()->endOfDay();
+        }
     }
 
     private function normalizeRequestedTime(string $timeLabel): ?string

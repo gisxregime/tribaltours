@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
 </head>
-<body class="account-page" data-page="messages" data-require-auth="true">
+<body class="account-page" data-page="messages" data-require-auth="true" data-route-guide-id="{{ $routeGuideId ?? '' }}">
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="app-root">
         <aside class="sidebar" id="sidebar">
@@ -61,7 +61,6 @@
                         <ul class="dropdown-menu hamburger-dropdown">
                             <li><h6 class="dropdown-header">Navigation</h6></li>
                             <li><a class="dropdown-item" href="{{ route('explore') }}"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
-                            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-bell"></i>Notifications <span class="hamburger-badge">0</span></a></li>
                             <li><a class="dropdown-item" href="{{ route('my-posts') }}"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
                             <li><a class="dropdown-item" href="{{ route('my-bookings') }}"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
                             <li><a class="dropdown-item" href="{{ route('likes') }}"><i class="fa-solid fa-heart"></i>Likes</a></li>
@@ -93,14 +92,23 @@
                     <article class="chat-window position-relative">
                         <header class="chat-header">
                             <div class="d-flex align-items-center gap-2">
-                                <button class="btn btn-light d-lg-none" type="button"><i class="fa-solid fa-arrow-left"></i></button>
+                                <button id="chatBackBtn" class="btn btn-light d-lg-none" type="button" aria-label="Back to conversations"><i class="fa-solid fa-arrow-left"></i></button>
                                 <strong id="chatTitle">Select a conversation</strong>
                             </div>
-                            <button class="btn btn-light" type="button"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                            <div class="dropdown">
+                                <button id="chatMenuBtn" class="btn btn-light" type="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" aria-label="Conversation actions">
+                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                </button>
+                                <div class="dropdown-menu dropdown-menu-end">
+                                    <button class="dropdown-item" type="button" data-chat-refresh>Refresh conversation</button>
+                                    <button class="dropdown-item d-lg-none" type="button" data-chat-show-list>Back to conversations</button>
+                                </div>
+                            </div>
                         </header>
 
                         <div class="chat-messages" id="chatMessages"></div>
                         <div id="typingIndicator" class="typing-indicator"><i class="fa-solid fa-ellipsis"></i> Guide is typing...</div>
+                        <section id="chatPaymentCardHost" class="chat-payment-host"></section>
 
                         <form id="chatForm" class="chat-input">
                             <button id="emojiToggle" class="btn btn-light" type="button"><i class="fa-regular fa-face-smile"></i></button>

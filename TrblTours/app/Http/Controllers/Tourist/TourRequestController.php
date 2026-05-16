@@ -442,7 +442,9 @@ class TourRequestController extends Controller
             'request' => $this->presentRequest($tourRequest->fresh(['tourist', 'selectedGuide'])),
             'bookingId' => (string) $booking->id,
             'conversationId' => (string) $conversation->id,
-            'redirect' => '/messages?conversation=' . urlencode((string) $conversation->id),
+            'redirect' => '/messages/' . urlencode((string) $guide->id)
+                . '?conversation=' . urlencode((string) $conversation->id)
+                . '&request=' . urlencode((string) $tourRequest->id),
         ]);
     }
 

@@ -46,7 +46,7 @@ class GuideDashboardController extends Controller
     private function buildReviews(int $guideId): array
     {
         return Review::query()
-            ->with(['listing:id,title,cover_image_path', 'booking:id,booked_for_date,guest_count', 'tourist:id,name'])
+            ->with(['listing:id,title,cover_image_path', 'booking:id,booked_for_date,guest_count', 'tourist:id,name,avatar_path'])
             ->where('guide_id', $guideId)
             ->where('is_public', true)
             ->latest('created_at')
@@ -62,6 +62,8 @@ class GuideDashboardController extends Controller
                     'listingTitle' => (string) ($review->listing?->title ?? 'Tour Listing'),
                     'listingImage' => (string) ($review->listing?->cover_image_path ?? 'images/pangasinan.jpg'),
                     'reviewer' => $touristName !== '' ? $touristName : 'Tourist',
+                    'touristAvatar' => $this->resolveAvatarPath($review->tourist?->avatar_path),
+                    'reviewerAvatar' => $this->resolveAvatarPath($review->tourist?->avatar_path),
                     'rating' => (int) ($review->rating ?? 0),
                     'comment' => (string) ($review->comment ?? ''),
                     'title' => (string) ($review->title ?? ''),
@@ -72,5 +74,19 @@ class GuideDashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $raw = trim((string) ($path ?? ''));
+        if ($raw === '') {
+            return '/images/manila.jpg';
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://') || str_starts_with($raw, 'data:')) {
+            return $raw;
+        }
+
+        return '/' . ltrim($raw, '/');
     }
 }

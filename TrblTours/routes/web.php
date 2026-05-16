@@ -37,6 +37,9 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->group(function () {
     Route::get('/my-posts', [TouristController::class, 'myPosts'])->name('my-posts');
     Route::get('/my-bookings', [BookingController::class, 'myBookings'])->name('my-bookings');
     Route::get('/messages', [MessageController::class, 'tourist'])->name('messages');
+    Route::get('/messages/{guideId}', [MessageController::class, 'tourist'])
+        ->whereNumber('guideId')
+        ->name('messages.guide');
     Route::get('/profile', [ProfileController::class, 'tourist'])->name('profile');
     Route::get('/settings', [ProfileController::class, 'settings'])->name('settings');
     Route::get('/tour-preview', [TourController::class, 'preview'])->name('tour-preview');

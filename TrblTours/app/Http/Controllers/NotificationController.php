@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Booking;
+use App\Models\Conversation;
+use App\Models\TourRequest;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -10,11 +14,16 @@ class NotificationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $items = $request->user()?->notifications()->latest()->limit(80)->get()->map(function ($notification) {
+        $currentUserId = (int) ($request->user()?->id ?? 0);
+
+        $items = $request->user()?->notifications()->latest()->limit(80)->get()->map(function ($notification) use ($currentUserId) {
             $data = is_array($notification->data) ? $notification->data : [];
             $type = (string) ($data['type'] ?? $notification->type);
             $payload = is_array($data['payload'] ?? null) ? $data['payload'] : [];
             $fullText = (string) ($data['text'] ?? Str::headline(str_replace(['.', '_'], ' ', $type)));
+
+            $actor = $this->resolveActor($data, $payload, $currentUserId);
+
             $targetTitle = $this->firstNonEmptyString([
                 $data['target_title'] ?? null,
                 $payload['targetTitle'] ?? null,
@@ -23,6 +32,7 @@ class NotificationController extends Controller
                 $payload['title'] ?? null,
             ]);
             $actorName = $this->firstNonEmptyString([
+                $actor?->name,
                 $data['actor_name'] ?? null,
                 $payload['actorName'] ?? null,
                 $payload['senderName'] ?? null,
@@ -48,6 +58,7 @@ class NotificationController extends Controller
             }
 
             $actorAvatar = $this->firstNonEmptyString([
+                $this->resolveAvatarPath($actor?->avatar_path),
                 $data['actor_avatar'] ?? null,
                 $payload['actorAvatar'] ?? null,
                 $payload['senderAvatar'] ?? null,
@@ -191,5 +202,141 @@ class NotificationController extends Controller
         }
 
         return trim($message, " -:\t\n\r\0\x0B");
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $payload
+     */
+    private function extractActorId(array $data, array $payload): int
+    {
+        $candidates = [
+            $data['actor_id'] ?? null,
+            $payload['actorId'] ?? null,
+            $payload['senderId'] ?? null,
+            $payload['guideId'] ?? null,
+            $payload['touristId'] ?? null,
+            $payload['selectedGuideId'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_int($candidate) || is_float($candidate) || (is_string($candidate) && trim($candidate) !== '')) {
+                $id = (int) $candidate;
+                if ($id > 0) {
+                    return $id;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $payload
+     */
+    private function resolveActor(array $data, array $payload, int $currentUserId): ?User
+    {
+        $actorId = $this->extractActorId($data, $payload);
+
+        if ($actorId <= 0) {
+            $conversationId = $this->extractPositiveInt($payload['conversationId'] ?? null);
+            if ($conversationId > 0) {
+                $conversation = Conversation::query()
+                    ->select(['id', 'tourist_id', 'guide_id'])
+                    ->find($conversationId);
+
+                if ($conversation) {
+                    $actorId = $this->pickCounterpartUserId([
+                        (int) $conversation->tourist_id,
+                        (int) $conversation->guide_id,
+                    ], $currentUserId);
+                }
+            }
+        }
+
+        if ($actorId <= 0) {
+            $requestId = $this->extractPositiveInt($payload['requestId'] ?? null);
+            if ($requestId > 0) {
+                $tourRequest = TourRequest::query()
+                    ->select(['id', 'tourist_id', 'selected_guide_id'])
+                    ->find($requestId);
+
+                if ($tourRequest) {
+                    $actorId = $this->pickCounterpartUserId([
+                        (int) $tourRequest->tourist_id,
+                        (int) $tourRequest->selected_guide_id,
+                    ], $currentUserId);
+                }
+            }
+        }
+
+        if ($actorId <= 0) {
+            $bookingId = $this->extractPositiveInt($payload['bookingId'] ?? null);
+            if ($bookingId > 0) {
+                $booking = Booking::query()
+                    ->select(['id', 'tourist_id', 'guide_id'])
+                    ->find($bookingId);
+
+                if ($booking) {
+                    $actorId = $this->pickCounterpartUserId([
+                        (int) $booking->tourist_id,
+                        (int) $booking->guide_id,
+                    ], $currentUserId);
+                }
+            }
+        }
+
+        if ($actorId <= 0) {
+            return null;
+        }
+
+        return User::query()->select(['id', 'name', 'avatar_path'])->find($actorId);
+    }
+
+    /**
+     * @param array<int, int> $candidateIds
+     */
+    private function pickCounterpartUserId(array $candidateIds, int $currentUserId): int
+    {
+        foreach ($candidateIds as $candidateId) {
+            if ($candidateId > 0 && $candidateId !== $currentUserId) {
+                return $candidateId;
+            }
+        }
+
+        foreach ($candidateIds as $candidateId) {
+            if ($candidateId > 0) {
+                return $candidateId;
+            }
+        }
+
+        return 0;
+    }
+
+    private function extractPositiveInt(mixed $value): int
+    {
+        if (is_int($value) || is_float($value) || (is_string($value) && trim($value) !== '')) {
+            $intValue = (int) $value;
+            if ($intValue > 0) {
+                return $intValue;
+            }
+        }
+
+        return 0;
+    }
+
+    private function resolveAvatarPath(?string $path): string
+    {
+        $normalized = trim((string) $path);
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (Str::startsWith($normalized, ['http://', 'https://', '/'])) {
+            return $normalized;
+        }
+
+        return '/' . ltrim($normalized, '/');
     }
 }

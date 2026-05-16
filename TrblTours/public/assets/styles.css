@@ -243,6 +243,27 @@ a {
     display: block;
 }
 
+.guide-earnings-owner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.guide-earnings-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #e8d7b7;
+}
+
+.guide-earnings-name {
+    font-size: 0.88rem;
+    color: #5a4b38;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
 .guide-brand-link {
     display: inline-block;
     color: #2f2a22;
@@ -574,6 +595,17 @@ textarea.input-soft:focus {
     gap: 14px;
 }
 
+#feedCards.feed-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 24px;
+}
+
+#tourPreviewSimilarList.feed-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 320px));
+    gap: 24px;
+    justify-content: flex-start;
+}
+
 .tour-card {
     display: flex;
     height: 100%;
@@ -587,8 +619,269 @@ textarea.input-soft:focus {
     transition: box-shadow 0.2s ease;
 }
 
+#feedCards .tour-card,
+#tourPreviewSimilarList .tour-card {
+    height: 520px;
+    min-height: 520px;
+}
+
+#tourPreviewSimilarList .tour-card {
+    max-width: 320px;
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+#feedCards .tour-card {
+    max-width: none;
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+#feedCards .tour-card-body,
+#tourPreviewSimilarList .tour-card-body {
+    padding: 14px !important;
+}
+
+#feedCards .tour-card-location,
+#tourPreviewSimilarList .tour-card-location {
+    font-size: 0.74rem;
+}
+
+#feedCards .tour-card-title,
+#tourPreviewSimilarList .tour-card-title {
+    margin-top: 4px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    line-height: 1.25;
+}
+
+#feedCards .tour-card-guide,
+#tourPreviewSimilarList .tour-card-guide {
+    margin-top: 8px;
+    gap: 20px;
+    font-size: 0.82rem;
+}
+
+#feedCards .tour-card-guide-avatar,
+#tourPreviewSimilarList .tour-card-guide-avatar {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+}
+
+#feedCards .tour-card-verified,
+#tourPreviewSimilarList .tour-card-verified {
+    font-size: 0.66rem;
+    padding: 4px 6px;
+}
+
+#feedCards .tour-card-meta,
+#tourPreviewSimilarList .tour-card-meta {
+    margin-top: 6px;
+    font-size: 0.78rem;
+}
+
+#feedCards .tour-card-tags,
+#tourPreviewSimilarList .tour-card-tags {
+    margin-top: 8px;
+    margin-bottom: 15px;
+    gap: 4px;
+}
+
+#feedCards .tour-card-tag,
+#tourPreviewSimilarList .tour-card-tag {
+    font-size: 0.68rem;
+    padding: 4px 7px;
+}
+
+#feedCards .tour-card-footer,
+#tourPreviewSimilarList .tour-card-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 8px;
+}
+
+#feedCards .tour-card-price,
+#tourPreviewSimilarList .tour-card-price {
+    font-size: 1.55rem;
+}
+
+#feedCards .tour-card-price span,
+#tourPreviewSimilarList .tour-card-price span {
+    font-size: 0.78rem;
+}
+
+#feedCards .tour-card-view,
+#tourPreviewSimilarList .tour-card-view {
+    width: 100%;
+    min-width: 0;
+    font-size: 0.8rem;
+    padding: 7px 10px;
+}
+
 .tour-card:hover {
     box-shadow: 0 14px 24px rgba(23, 23, 18, 0.12);
+}
+
+.tour-card-media {
+    position: relative;
+}
+
+.tour-card-cover {
+    display: block;
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+}
+
+#feedCards .tour-card-cover,
+#tourPreviewSimilarList .tour-card-cover {
+    height: 200px !important;
+}
+
+#feedCards .tour-card-cover,
+#tourPreviewSimilarList .tour-card-cover {
+    height: 180px !important;
+}
+
+.tour-card-badge {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #9a742a;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 10px;
+}
+
+.tour-card-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 16px;
+}
+
+.tour-card-location {
+    margin: 0;
+    color: #6f6248;
+    font-size: 0.8rem;
+}
+
+.tour-card-title {
+    margin: 6px 0 0;
+    color: #223140;
+    font-size: clamp(1.2rem, 2vw, 1.95rem);
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.tour-card-guide {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #405060;
+    font-size: 0.92rem;
+}
+
+.tour-card-guide-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #e7decb;
+    background: #f6f2e9;
+}
+
+.tour-card-guide-name {
+    font-weight: 600;
+}
+
+.tour-card-verified {
+    border-radius: 999px;
+    background: rgba(199, 163, 74, 0.2);
+    color: #9a742a;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 5px 8px;
+}
+
+.tour-card-meta {
+    margin: 9px 0 0;
+    color: #5f6c7b;
+    font-size: 0.92rem;
+}
+
+.tour-card-tags {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tour-card-tag {
+    border-radius: 999px;
+    background: #f5f2ea;
+    color: #5d5748;
+    font-size: 0.76rem;
+    padding: 5px 9px;
+}
+
+.tour-card-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid #ece4d0;
+    padding-top: 12px;
+}
+
+.tour-card-price {
+    margin: 0;
+    color: #1f2b38;
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.tour-card-price span {
+    color: #8a877f;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.tour-card-view {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    border-radius: 999px;
+    background: #c7a34a;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    padding: 10px 16px;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.tour-card-view:hover {
+    background: #b8923e;
+    color: #fff;
+    text-decoration: none;
+    transform: translateY(-1px);
 }
 
 .like-save {
@@ -735,86 +1028,21 @@ textarea.input-soft:focus {
     padding-top: 12px;
 }
 
-.tour-preview-similar-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+.gallery-item img[data-tour-image] {
+    cursor: zoom-in;
 }
 
-.tour-preview-similar-card {
-    border: 1px solid #ece4d0;
-    border-radius: 14px;
-    background: #fff;
-    overflow: hidden;
-    box-shadow: 0 8px 20px rgba(23, 23, 18, 0.08);
-    animation: similarTourReveal 0.24s ease;
+.tour-preview-image-modal .modal-content {
+    background: #101010;
+    border: 0;
 }
 
-.tour-preview-similar-card__media {
+.tour-preview-image-full {
     display: block;
-    height: 142px;
-    overflow: hidden;
-}
-
-.tour-preview-similar-card__media img {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 0.25s ease;
-}
-
-.tour-preview-similar-card__media:hover img {
-    transform: scale(1.03);
-}
-
-.tour-preview-similar-card__body {
-    padding: 10px 12px 12px;
-}
-
-.tour-preview-similar-card__location {
-    margin: 0;
-    color: #6f6248;
-    font-size: 0.76rem;
-}
-
-.tour-preview-similar-card__title {
-    margin: 3px 0 4px;
-    font-size: 1rem;
-    line-height: 1.25;
-}
-
-.tour-preview-similar-card__title a {
-    color: #223140;
-    text-decoration: none;
-}
-
-.tour-preview-similar-card__title a:hover {
-    color: #9a742a;
-}
-
-.tour-preview-similar-card__meta {
-    margin: 0;
-    color: #5f6c7b;
-    font-size: 0.79rem;
-}
-
-.tour-preview-similar-card__footer {
-    margin-top: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-@keyframes similarTourReveal {
-    from {
-        opacity: 0;
-        transform: translateY(6px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    max-height: 88vh;
+    object-fit: contain;
+    background: #101010;
 }
 
 .flow-wrap {
@@ -1758,6 +1986,142 @@ textarea.input-soft:focus {
     padding: 14px;
 }
 
+.simulated-earnings-card {
+    border-color: #dfd3bc;
+    background: linear-gradient(180deg, #fffefb 0%, #fff9f0 100%);
+}
+
+.simulated-earnings-total {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #0f766e;
+    font-family: var(--font-display);
+}
+
+.simulated-transaction-list {
+    display: grid;
+    gap: 8px;
+}
+
+.simulated-transaction-row {
+    border: 1px solid #e8dcc5;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+}
+
+.simulated-transaction-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: nowrap;
+}
+
+.simulated-transaction-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    object-fit: cover;
+    flex: 0 0 40px;
+    border: 1px solid #e4d9c1;
+    background: #f6f2e9;
+}
+
+.simulated-transaction-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 2px;
+}
+
+.simulated-transaction-name {
+    color: #3f3526;
+    line-height: 1.2;
+}
+
+.simulated-transaction-title,
+.simulated-transaction-date {
+    line-height: 1.2;
+}
+
+.simulated-transaction-status-line {
+    margin-top: 2px;
+}
+
+.simulated-transaction-amount-line {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-wrap: wrap;
+    line-height: 1.2;
+}
+
+.simulated-transaction-row .meta {
+    color: #7e7567;
+    font-size: 0.78rem;
+}
+
+.simulated-transaction-row .amount {
+    font-weight: 800;
+    color: #14532d;
+}
+
+.simulated-transaction-row .method {
+    color: #615849;
+    font-size: 0.8rem;
+}
+
+@media (max-width: 700px) {
+    .simulated-transaction-main {
+        align-items: flex-start;
+        flex-wrap: nowrap;
+    }
+
+    .simulated-transaction-avatar {
+        width: 36px;
+        height: 36px;
+        flex-basis: 36px;
+    }
+}
+
+.simulated-transaction-empty {
+    border: 1px dashed #d8ccb7;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+    color: #7a6f5f;
+    background: #fffef9;
+}
+
+.tour-preview-review-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.tour-preview-review-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #e7decb;
+    background: #f6f2e9;
+    flex-shrink: 0;
+}
+
+.tour-preview-review-head-meta {
+    min-width: 0;
+}
+
+.tour-preview-review-stars {
+    color: #f4b400;
+    letter-spacing: 1px;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
 .likes-hero {
     display: flex;
     justify-content: space-between;
@@ -1823,6 +2187,54 @@ textarea.input-soft:focus {
     cursor: pointer;
 }
 
+.conversation-card-content {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.conversation-payment-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    flex-wrap: wrap;
+}
+
+.conversation-payment-badge {
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.conversation-payment-badge.paid {
+    background: #e7f7ec;
+    color: #22603c;
+}
+
+.conversation-payment-badge.pending {
+    background: #fff2d8;
+    color: #8f6512;
+}
+
+.conversation-payment-amount {
+    font-size: 0.73rem;
+    line-height: 1.2;
+    color: #71675a;
+}
+
+.conversation-payment-amount.paid {
+    color: #22603c;
+    font-weight: 600;
+}
+
+.conversation-payment-amount.pending {
+    color: #8f6512;
+    font-weight: 600;
+}
+
 .conversation-item.active {
     background: #f9f6ef;
 }
@@ -1851,6 +2263,36 @@ textarea.input-soft:focus {
     height: calc(100vh - 330px);
     overflow: auto;
     background: #fcfaf4;
+}
+
+.conversation-items,
+.chat-messages {
+    scrollbar-width: thin;
+    scrollbar-color: #c8b58f #f6f1e4;
+}
+
+.conversation-items::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.conversation-items::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track {
+    background: #f6f1e4;
+    border-radius: 999px;
+}
+
+.conversation-items::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb {
+    background: #c8b58f;
+    border-radius: 999px;
+    border: 2px solid #f6f1e4;
+}
+
+.conversation-items::-webkit-scrollbar-thumb:hover,
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #b59d72;
 }
 
 .msg-row {
@@ -1912,6 +2354,89 @@ textarea.input-soft:focus {
     font-size: 13px;
 }
 
+.chat-payment-host {
+    border-top: 1px dashed #e3d9c4;
+    background: #fffdf8;
+    padding: 10px 12px;
+}
+
+.chat-payment-card {
+    border: 1px solid #eadfca;
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.chat-payment-title {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #332d22;
+}
+
+.chat-payment-tour {
+    margin-top: 2px;
+    margin-bottom: 8px;
+    color: #7b705f;
+    font-size: 0.82rem;
+}
+
+.chat-payment-row {
+    display: grid;
+    grid-template-columns: 1fr 220px auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.chat-payment-row .input-soft,
+.chat-payment-row .select-soft {
+    min-height: 40px;
+}
+
+.chat-payment-help {
+    margin-top: 6px;
+    margin-bottom: 0;
+    color: #8a7f6c;
+    font-size: 0.78rem;
+}
+
+.chat-payment-status {
+    margin-top: 9px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-payment-badge {
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.chat-payment-badge.paid {
+    background: #e7f7ec;
+    color: #22603c;
+}
+
+.chat-payment-badge.pending {
+    background: #fff2d8;
+    color: #8f6512;
+}
+
+.chat-payment-summary {
+    color: #5d5446;
+    font-size: 0.82rem;
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .chat-payment-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 .chat-input {
     border-top: 1px solid var(--border);
     padding: 10px;
@@ -1922,15 +2447,18 @@ textarea.input-soft:focus {
 
 .emoji-panel {
     display: none;
-    position: absolute;
-    bottom: 68px;
-    right: 16px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--shadow);
     padding: 8px;
     width: 190px;
+    z-index: 1085;
 }
 
 .emoji-panel button {
@@ -2221,7 +2749,14 @@ textarea.input-soft:focus {
         min-height: auto;
     }
 
-    .tour-preview-similar-grid {
+    #feedCards .tour-card,
+    #tourPreviewSimilarList .tour-card {
+        max-width: 100%;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+
+    .feed-grid {
         grid-template-columns: 1fr;
     }
 

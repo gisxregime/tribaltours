@@ -20,7 +20,7 @@
             <div class="sidebar-header guide-sidebar-header">
                 <div class="guide-sidebar-brand">
                     <img src="{{ asset('images/favicon.png') }}" alt="Tribaltours logo" class="guide-sidebar-logo">
-                    <small class="text-muted d-block mt-1">Tour Guide Workspace - {{ auth()->user()?->name ?? 'Guide' }}</small>
+                    <small class="text-muted d-block mt-1">Tour Guide Workspace</small>
                 </div>
             </div>
             <nav class="sidebar-nav">
@@ -74,7 +74,7 @@
 
             <main class="content-wrap">
                 <section class="page-header">
-                    <p class="text-muted small mb-2">Account owner: {{ auth()->user()?->name ?? 'Guide' }}</p>
+                    <p class="text-muted small mb-2">Account owner</p>
                     <h1 class="guide-page-title">Dashboard</h1>
                 </section>
 
@@ -92,6 +92,22 @@
                         <a href="{{ route('guide.booking-requests.index') }}" class="btn-soft">Open Booking Requests</a>
                     </div>
                     <div id="dashboardPendingList" class="bookings-grid"></div>
+                </section>
+
+                <section class="guide-layout-grid mt-3">
+                    <article class="settings-card simulated-earnings-card">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                            <div>
+                                <h2 class="h5 mb-0">Tour Request Earnings</h2>
+                                <div class="guide-earnings-owner mt-2">
+                                    <img src="{{ asset('images/manila.jpg') }}" alt="Guide profile photo" class="guide-earnings-avatar" data-guide-earnings-avatar>
+                                    <span class="guide-earnings-name" data-guide-earnings-name>Tour Guide</span>
+                                </div>
+                            </div>
+                            <div class="simulated-earnings-total" id="simulatedEarningsValue">₱0.00</div>
+                        </div>
+                        <div id="simulatedTransactionList" class="simulated-transaction-list"></div>
+                    </article>
                 </section>
 
                 <section class="guide-layout-grid mt-3">

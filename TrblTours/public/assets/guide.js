@@ -7,6 +7,9 @@
     const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
     const GUIDE_TOUR_DRAFT_KEY = 'tribaltours_guide_tour_form_draft_v1';
     const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
+    const CHAT_PAYMENT_STATE_KEY = 'tribaltours_chat_payment_state_v1';
+    const CHAT_PAYMENT_TRANSACTIONS_KEY = 'tribaltours_chat_payment_transactions_v1';
+    const CHAT_SIMULATED_EVENTS_KEY = 'tribaltours_chat_simulated_events_v1';
     const ROLE_KEY = 'role';
     const STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
     const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
@@ -967,12 +970,190 @@
         writeStore(GUIDE_CONVERSATIONS_KEY, Array.isArray(conversations) ? conversations : []);
     }
 
+    function getChatPaymentStateMap() {
+        const parsed = readStore(CHAT_PAYMENT_STATE_KEY, {});
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {};
+        }
+        return parsed;
+    }
+
+    function setChatPaymentStateMap(nextState) {
+        const safe = nextState && typeof nextState === 'object' && !Array.isArray(nextState)
+            ? nextState
+            : {};
+        writeStore(CHAT_PAYMENT_STATE_KEY, safe);
+    }
+
+    function getConversationPaymentState(conversationId) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return null;
+        }
+        const map = getChatPaymentStateMap();
+        const record = map[key];
+        return record && typeof record === 'object' ? record : null;
+    }
+
+    function saveConversationPaymentState(conversationId, patch) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return null;
+        }
+
+        const map = getChatPaymentStateMap();
+        const current = map[key] && typeof map[key] === 'object' ? map[key] : {};
+        map[key] = Object.assign({}, current, patch || {}, {
+            conversationId: key,
+            updatedAt: nowISO(),
+        });
+        setChatPaymentStateMap(map);
+        return map[key];
+    }
+
+    function getSimulatedPaymentTransactions() {
+        const parsed = readStore(CHAT_PAYMENT_TRANSACTIONS_KEY, []);
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function setSimulatedPaymentTransactions(list) {
+        const safeList = Array.isArray(list) ? list : [];
+        writeStore(CHAT_PAYMENT_TRANSACTIONS_KEY, safeList.slice(0, 300));
+    }
+
+    function upsertSimulatedPaymentTransaction(record) {
+        if (!record || typeof record !== 'object') {
+            return;
+        }
+
+        const transactions = getSimulatedPaymentTransactions();
+        const conversationId = String(record.conversationId || '').trim();
+        const requestId = String(record.requestId || '').trim();
+        const index = transactions.findIndex(function (item) {
+            if (!item || typeof item !== 'object') {
+                return false;
+            }
+            if (conversationId && String(item.conversationId || '') === conversationId) {
+                return true;
+            }
+            if (requestId && String(item.requestId || '') === requestId) {
+                return true;
+            }
+            return false;
+        });
+
+        const normalized = Object.assign({}, record, {
+            id: String(record.id || uid('sim-txn')),
+            amount: Math.max(0, Number(record.amount || 0)),
+            conversationId: conversationId,
+            requestId: requestId,
+            updatedAt: nowISO(),
+            createdAt: String(record.createdAt || nowISO())
+        });
+
+        if (index >= 0) {
+            transactions[index] = Object.assign({}, transactions[index], normalized);
+        } else {
+            transactions.unshift(normalized);
+        }
+
+        setSimulatedPaymentTransactions(transactions);
+    }
+
+    function getSimulatedChatEvents() {
+        const parsed = readStore(CHAT_SIMULATED_EVENTS_KEY, []);
+        return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function setSimulatedChatEvents(list) {
+        const safe = Array.isArray(list) ? list : [];
+        writeStore(CHAT_SIMULATED_EVENTS_KEY, safe.slice(-400));
+    }
+
+    function addSimulatedChatEvent(eventPayload) {
+        if (!eventPayload || typeof eventPayload !== 'object') {
+            return null;
+        }
+
+        const event = Object.assign({}, eventPayload, {
+            id: String(eventPayload.id || uid('sim-msg')),
+            conversationId: String(eventPayload.conversationId || ''),
+            text: String(eventPayload.text || '').trim(),
+            authorRole: String(eventPayload.authorRole || 'system').trim().toLowerCase() || 'system',
+            createdAt: String(eventPayload.createdAt || nowISO()),
+        });
+
+        if (!event.conversationId || !event.text) {
+            return null;
+        }
+
+        const events = getSimulatedChatEvents();
+        const exists = events.some(function (item) {
+            return item && String(item.id || '') === event.id;
+        });
+        if (!exists) {
+            events.push(event);
+            setSimulatedChatEvents(events);
+        }
+        return event;
+    }
+
+    function getSimulatedChatEventsByConversation(conversationId) {
+        const key = String(conversationId || '').trim();
+        if (!key) {
+            return [];
+        }
+
+        return getSimulatedChatEvents()
+            .filter(function (item) {
+                return item && String(item.conversationId || '') === key;
+            })
+            .sort(function (a, b) {
+                const left = Date.parse(String((a && a.createdAt) || '')) || 0;
+                const right = Date.parse(String((b && b.createdAt) || '')) || 0;
+                return left - right;
+            });
+    }
+
+    function formatSimulatedPeso(value) {
+        return '₱' + Number(value || 0).toLocaleString('en-PH', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    function sanitizePaymentCopy(value) {
+        return String(value || '')
+            .replace(/\s*\(simulated\)/ig, '')
+            .replace(/\bsimulated\b/ig, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
     function getGuideProfile() {
         return readStore(GUIDE_PROFILE_KEY, {});
     }
 
+    function applyGuideWorkspaceIdentity(profile) {
+        const source = profile && typeof profile === 'object' ? profile : getGuideProfile();
+        const normalized = normalizeGuideProfileSnapshot(source);
+        const avatarUrl = normalizeAssetPath(normalized.avatar, '/images/manila.jpg');
+        const displayName = String(normalized.name || 'Tour Guide').trim() || 'Tour Guide';
+
+        qsa('[data-guide-earnings-avatar]').forEach(function (node) {
+            node.src = avatarUrl;
+            node.alt = displayName + ' profile photo';
+        });
+
+        qsa('[data-guide-earnings-name]').forEach(function (node) {
+            node.textContent = displayName;
+        });
+    }
+
     function setGuideProfile(profile) {
-        writeStore(GUIDE_PROFILE_KEY, profile || {});
+        const safeProfile = profile && typeof profile === 'object' ? profile : {};
+        writeStore(GUIDE_PROFILE_KEY, safeProfile);
+        applyGuideWorkspaceIdentity(safeProfile);
     }
 
     function normalizeGuideProfileSnapshot(payload) {
@@ -1004,7 +1185,9 @@
             setGuideProfile(normalized);
             return normalized;
         }).catch(function () {
-            return getGuideProfile();
+            const fallback = normalizeGuideProfileSnapshot(getGuideProfile());
+            applyGuideWorkspaceIdentity(fallback);
+            return fallback;
         });
     }
 
@@ -1081,6 +1264,10 @@
     function initSidebar() {
         const backdrop = qs('#sidebarBackdrop');
         qsa('[data-sidebar-toggle]').forEach(function (button) {
+            if (String(button.getAttribute('data-bs-toggle') || '').toLowerCase() === 'dropdown') {
+                return;
+            }
+
             button.addEventListener('click', function () {
                 document.body.classList.toggle('sidebar-open');
             });
@@ -1398,6 +1585,17 @@
 
     function closeDropdownByButtonId(buttonId) {
         const trigger = qs('#' + String(buttonId || ''));
+        if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        const instance = window.bootstrap.Dropdown.getInstance(trigger) || window.bootstrap.Dropdown.getOrCreateInstance(trigger);
+        instance.hide();
+    }
+
+    function closeContainingDropdown(element) {
+        const target = element && element.closest ? element.closest('.dropdown') : null;
+        const trigger = target ? qs('[data-bs-toggle="dropdown"]', target) : null;
         if (!trigger || !window.bootstrap || !window.bootstrap.Dropdown) {
             return;
         }
@@ -2978,6 +3176,14 @@
         const chatInput = qs('#chatInput');
         const chatForm = qs('#chatForm');
         const typingIndicator = qs('#typingIndicator');
+        const paymentCardHost = qs('#chatPaymentCardHost');
+        const conversationPanel = qs('.conversation-list');
+        const chatWindow = qs('.chat-window');
+        const chatBackBtn = qs('#chatBackBtn');
+        const chatRefreshBtn = qs('[data-chat-refresh]');
+        const chatShowListBtn = qs('[data-chat-show-list]');
+        const emojiToggle = qs('#emojiToggle');
+        const emojiPanel = qs('#emojiPanel');
         const params = new URLSearchParams(window.location.search);
 
         if (!list || !chatTitle || !chatMessages || !chatForm || !chatInput) {
@@ -2987,34 +3193,47 @@
         let activeSearch = '';
         let conversations = [];
         let activeConversation = null;
-        const messagesByConversation = {};
         const routeConversationId = params.get('conversation');
+        const routeRequestId = params.get('request');
+        let mobileChatOpen = Boolean(routeConversationId);
+        const messagesByConversation = {};
+        let positionEmojiPanel = function () {};
 
-        function conversationPartnerKey(item) {
-            const source = item && typeof item === 'object' ? item : {};
-            const touristId = String(source.touristId || '').trim();
-            if (touristId) {
-                return 'tourist:' + touristId;
+        function isCompactViewport() {
+            return window.matchMedia('(max-width: 992px)').matches;
+        }
+
+        function setConversationVisibility(showChat) {
+            if (!conversationPanel || !chatWindow) {
+                return;
             }
 
-            return 'name:' + String(source.touristName || source.name || '').trim().toLowerCase();
+            if (!isCompactViewport()) {
+                conversationPanel.style.display = '';
+                chatWindow.style.display = '';
+                return;
+            }
+
+            conversationPanel.style.display = showChat ? 'none' : '';
+            chatWindow.style.display = showChat ? '' : 'none';
         }
 
         function normalizeConversation(item) {
             const source = item && typeof item === 'object' ? item : {};
-            const partnerKey = conversationPartnerKey(source);
 
             return {
                 id: String(source.id || uid('conversation')),
                 touristName: String(source.name || source.touristName || 'Tourist'),
                 avatar: normalizeAssetPath(source.avatar, '/images/manila.jpg'),
                 tourTitle: String(source.tourTitle || 'Travel planning thread'),
+                budgetMin: Number(source.budgetMin || 0),
+                budgetMax: Number(source.budgetMax || 0),
                 unread: Number(source.unread || 0),
                 lastTime: String(source.time || nowISO()),
                 last: String(source.last || ''),
+                tourRequestId: source.tourRequestId ? String(source.tourRequestId) : '',
                 guideId: source.guideId ? String(source.guideId) : '',
-                touristId: source.touristId ? String(source.touristId) : '',
-                partnerKey: partnerKey
+                touristId: source.touristId ? String(source.touristId) : ''
             };
         }
 
@@ -3031,36 +3250,248 @@
             };
         }
 
-        function dedupeConversationsByPartner(items) {
-            const source = Array.isArray(items) ? items : [];
-            const seen = new Map();
+        function paymentStatusLabel(status) {
+            const value = String(status || '').toLowerCase();
+            if (value === 'paid') {
+                return 'PAID';
+            }
+            if (value === 'pending_cash_on_tour') {
+                return 'Pending (Cash on Tour)';
+            }
+            return 'Not set';
+        }
 
-            source.forEach(function (conversation) {
-                if (!conversation || typeof conversation !== 'object') {
+        function findPaymentStateForConversation(conversation) {
+            if (!conversation || typeof conversation !== 'object') {
+                return null;
+            }
+
+            const conversationId = String(conversation.id || '').trim();
+            const direct = conversationId ? getConversationPaymentState(conversationId) : null;
+            if (direct && typeof direct === 'object') {
+                return direct;
+            }
+
+            const requestId = String(conversation.tourRequestId || '').trim();
+            if (!requestId) {
+                return null;
+            }
+
+            const guideId = String(conversation.guideId || '').trim();
+            const map = getChatPaymentStateMap();
+            let best = null;
+            let bestTime = 0;
+
+            Object.keys(map).forEach(function (key) {
+                const state = map[key];
+                if (!state || typeof state !== 'object') {
                     return;
                 }
 
-                const key = String(conversation.partnerKey || conversationPartnerKey(conversation) || '').trim();
-                if (!key) {
+                if (String(state.requestId || '').trim() !== requestId) {
                     return;
                 }
 
-                const existing = seen.get(key);
-                if (!existing) {
-                    seen.set(key, conversation);
+                const stateGuideId = String(state.guideId || '').trim();
+                if (guideId && stateGuideId && stateGuideId !== guideId) {
                     return;
                 }
 
-                const existingTime = Date.parse(String(existing.lastTime || '')) || 0;
-                const currentTime = Date.parse(String(conversation.lastTime || '')) || 0;
-                if (currentTime >= existingTime) {
-                    seen.set(key, Object.assign({}, existing, conversation, {
-                        unread: Math.max(Number(existing.unread || 0), Number(conversation.unread || 0))
-                    }));
+                const ts = Date.parse(String(state.updatedAt || state.paidAt || state.pendingAt || '')) || 0;
+                if (!best || ts >= bestTime) {
+                    best = state;
+                    bestTime = ts;
                 }
             });
 
-            return Array.from(seen.values()).sort(function (a, b) {
+            return best;
+        }
+
+        function parsePaymentAmountFromText(text) {
+            const source = String(text || '').trim();
+            if (!source) {
+                return 0;
+            }
+
+            const pesoMatch = source.match(/₱\s*([\d,]+(?:\.\d{1,2})?)/i);
+            const plainMatch = source.match(/payment(?:\s+successful)?[:\s]*([\d,]+(?:\.\d{1,2})?)/i);
+            const match = pesoMatch || plainMatch;
+            if (!match || !match[1]) {
+                return 0;
+            }
+
+            const amount = Number(String(match[1]).replace(/,/g, ''));
+            return Number.isFinite(amount) && amount > 0 ? amount : 0;
+        }
+
+        function parsePaymentMethodFromText(text) {
+            const source = String(text || '').trim();
+            if (!source) {
+                return '';
+            }
+
+            const lower = source.toLowerCase();
+            if (lower.includes('cash on tour') || lower.includes('pay during the tour')) {
+                return 'Cash on Tour';
+            }
+
+            const viaMatch = source.match(/via\s+([A-Za-z][A-Za-z\s-]{1,40})/i);
+            if (!viaMatch || !viaMatch[1]) {
+                return '';
+            }
+
+            return String(viaMatch[1] || '').replace(/[\s.!,;:]+$/g, '').trim();
+        }
+
+        function inferPaymentStateFromMessages(messages) {
+            const source = Array.isArray(messages) ? messages : [];
+
+            for (let index = source.length - 1; index >= 0; index -= 1) {
+                const message = source[index];
+                const text = String((message && message.text) || '').trim();
+                if (!text) {
+                    continue;
+                }
+
+                const lower = text.toLowerCase();
+                if (lower.includes('payment successful') || (lower.includes('payment of') && lower.includes('received from tourist'))) {
+                    return {
+                        status: 'paid',
+                        amount: parsePaymentAmountFromText(text),
+                        paymentMethod: parsePaymentMethodFromText(text) || 'N/A',
+                        updatedAt: String((message && message.createdAt) || nowISO())
+                    };
+                }
+
+                if (lower.includes('pay during the tour') || lower.includes('cash on tour is pending completion')) {
+                    return {
+                        status: 'pending_cash_on_tour',
+                        amount: parsePaymentAmountFromText(text),
+                        paymentMethod: 'Cash on Tour',
+                        updatedAt: String((message && message.createdAt) || nowISO())
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        function resolveConversationPaymentState(conversation, messages) {
+            const state = findPaymentStateForConversation(conversation);
+            const normalizedStatus = String(state && state.status ? state.status : '').toLowerCase();
+            if (normalizedStatus === 'paid' || normalizedStatus === 'pending_cash_on_tour') {
+                return state;
+            }
+
+            return inferPaymentStateFromMessages(messages);
+        }
+
+        function renderConversationPaymentMeta(conversation, messages) {
+            const state = resolveConversationPaymentState(conversation, messages);
+            const status = String(state && state.status ? state.status : '').toLowerCase();
+            if (status !== 'paid' && status !== 'pending_cash_on_tour') {
+                return '';
+            }
+
+            const paid = status === 'paid';
+            const amount = Number(state && state.amount ? state.amount : 0);
+            const badgeClass = paid ? 'paid' : 'pending';
+            const badgeText = paid ? 'Paid' : 'Payment Pending';
+            const amountText = amount > 0
+                ? formatSimulatedPeso(amount) + (paid ? ' paid' : ' pending')
+                : (paid ? 'Payment received' : 'Awaiting payment');
+
+            return [
+                '<div class="conversation-payment-meta">',
+                '<span class="conversation-payment-badge ', badgeClass, '">', escapeHtml(badgeText), '</span>',
+                '<span class="conversation-payment-amount ', badgeClass, '">', escapeHtml(amountText), '</span>',
+                '</div>'
+            ].join('');
+        }
+
+        function toSimulatedThreadMessage(event) {
+            const source = event && typeof event === 'object' ? event : {};
+            const role = String(source.authorRole || 'system').toLowerCase();
+            return {
+                id: 'sim-' + String(source.id || uid('sim-msg')),
+                mine: role === 'guide',
+                text: sanitizePaymentCopy(source.text),
+                senderId: role,
+                senderAvatar: role === 'guide'
+                    ? normalizeAssetPath((getGuideProfile() && getGuideProfile().avatar) || '/images/manila.jpg', '/images/manila.jpg')
+                    : '',
+                isRead: true,
+                createdAt: String(source.createdAt || nowISO())
+            };
+        }
+
+        function getMergedConversationMessages(conversationId) {
+            const key = String(conversationId || '').trim();
+            if (!key) {
+                return [];
+            }
+
+            const persisted = (messagesByConversation[key] || []).slice();
+            const simulated = getSimulatedChatEventsByConversation(key).map(toSimulatedThreadMessage);
+            const merged = persisted.concat(simulated);
+
+            const convo = conversations.find(function (item) {
+                return item && String(item.id || '') === key;
+            });
+            const paymentState = findPaymentStateForConversation(convo || { id: key });
+            const paymentStatus = String(paymentState && paymentState.status ? paymentState.status : '').toLowerCase();
+            if ((paymentStatus === 'paid' || paymentStatus === 'pending_cash_on_tour') && Number(paymentState.amount || 0) > 0) {
+                const syntheticText = paymentStatus === 'paid'
+                    ? 'Payment of ' + formatSimulatedPeso(Number(paymentState.amount || 0)) + ' received from Tourist'
+                    : 'Cash on Tour is pending completion.';
+                const hasExistingPaymentLine = merged.some(function (message) {
+                    const text = String((message && message.text) || '').trim().toLowerCase();
+                    if (!text) {
+                        return false;
+                    }
+
+                    if (paymentStatus === 'paid') {
+                        return text.includes('payment of') || text.includes('payment successful');
+                    }
+
+                    return text.includes('cash on tour is pending completion') || text.includes('pay during the tour');
+                });
+
+                if (!hasExistingPaymentLine) {
+                    const syntheticId = 'pay-state-' + key + '-' + String(paymentState.updatedAt || paymentState.paidAt || paymentState.pendingAt || 'now');
+                    merged.push({
+                        id: syntheticId,
+                        mine: false,
+                        text: syntheticText,
+                        senderId: 'system',
+                        senderAvatar: '',
+                        isRead: true,
+                        createdAt: String(paymentState.updatedAt || paymentState.paidAt || paymentState.pendingAt || nowISO())
+                    });
+                }
+            }
+
+            const seen = new Set();
+
+            return merged
+                .filter(function (item) {
+                    const id = String(item && item.id ? item.id : '');
+                    if (!id || seen.has(id)) {
+                        return false;
+                    }
+                    seen.add(id);
+                    return true;
+                })
+                .sort(function (a, b) {
+                    const left = Date.parse(String((a && a.createdAt) || '')) || 0;
+                    const right = Date.parse(String((b && b.createdAt) || '')) || 0;
+                    return left - right;
+                });
+        }
+
+        function sortConversationsByLatest(items) {
+            const source = Array.isArray(items) ? items.slice() : [];
+            return source.sort(function (a, b) {
                 return new Date(b.lastTime || nowISO()).getTime() - new Date(a.lastTime || nowISO()).getTime();
             });
         }
@@ -3084,14 +3515,136 @@
             return '/images/manila.jpg';
         }
 
+        function renderPaymentCard() {
+            if (!paymentCardHost) {
+                return;
+            }
+
+            if (!activeConversation) {
+                paymentCardHost.innerHTML = '';
+                return;
+            }
+
+            const conversationId = String(activeConversation.id || '');
+            if (!conversationId) {
+                paymentCardHost.innerHTML = '';
+                return;
+            }
+
+            const mergedMessages = getMergedConversationMessages(conversationId);
+            const directState = findPaymentStateForConversation(activeConversation);
+            const inferredState = resolveConversationPaymentState(activeConversation, mergedMessages);
+            let state = inferredState;
+
+            const inferredStatus = String(inferredState && inferredState.status ? inferredState.status : '').toLowerCase();
+            const hasDirectStatus = String(directState && directState.status ? directState.status : '').toLowerCase();
+            if (!hasDirectStatus && (inferredStatus === 'paid' || inferredStatus === 'pending_cash_on_tour')) {
+                state = saveConversationPaymentState(conversationId, {
+                    requestId: activeConversation.tourRequestId ? String(activeConversation.tourRequestId) : '',
+                    guideId: activeConversation.guideId ? String(activeConversation.guideId) : '',
+                    guideName: 'Guide',
+                    touristName: String(activeConversation.touristName || 'Tourist'),
+                    tourTitle: String(activeConversation.tourTitle || 'Tour request'),
+                    amount: Number(inferredState && inferredState.amount ? inferredState.amount : 0),
+                    paymentMethod: String(inferredState && inferredState.paymentMethod ? inferredState.paymentMethod : (inferredStatus === 'pending_cash_on_tour' ? 'Cash on Tour' : 'N/A')),
+                    status: inferredStatus,
+                    paidAt: inferredStatus === 'paid' ? String(inferredState && inferredState.updatedAt ? inferredState.updatedAt : nowISO()) : null,
+                    pendingAt: inferredStatus === 'pending_cash_on_tour' ? String(inferredState && inferredState.updatedAt ? inferredState.updatedAt : nowISO()) : null,
+                }) || inferredState;
+            }
+
+            const suggestedRange = Number(activeConversation.budgetMin || 0) > 0 || Number(activeConversation.budgetMax || 0) > 0
+                ? formatSimulatedPeso(Number(activeConversation.budgetMin || 0)) + ' - ' + formatSimulatedPeso(Number(activeConversation.budgetMax || 0))
+                : '';
+
+            if (!state) {
+                paymentCardHost.innerHTML = [
+                    '<article class="chat-payment-card">',
+                    '<h2 class="chat-payment-title">Payment for tour request: ', escapeHtml(activeConversation.tourTitle || 'Tour request'), '</h2>',
+                    '<p class="chat-payment-tour">Tourist sets amount and method in this conversation.</p>',
+                    suggestedRange ? '<p class="chat-payment-help">Suggested range from request: ' + escapeHtml(suggestedRange) + '</p>' : '',
+                    '<p class="chat-payment-summary">No payment submitted yet.</p>',
+                    '</article>'
+                ].join('');
+                return;
+            }
+
+            const status = String(state.status || '').toLowerCase();
+            const amount = Number(state.amount || 0);
+            const method = String(state.paymentMethod || 'N/A');
+            const isPendingCash = status === 'pending_cash_on_tour';
+
+            paymentCardHost.innerHTML = [
+                '<article class="chat-payment-card">',
+                '<h2 class="chat-payment-title">Payment for tour request: ', escapeHtml(state.tourTitle || activeConversation.tourTitle || 'Tour request'), '</h2>',
+                '<p class="chat-payment-tour">Tourist: ', escapeHtml(activeConversation.touristName || 'Tourist'), '</p>',
+                '<div class="chat-payment-status">',
+                '<span class="chat-payment-badge ', status === 'paid' ? 'paid' : 'pending', '">', escapeHtml(paymentStatusLabel(status)), '</span>',
+                '<p class="chat-payment-summary">', escapeHtml(formatSimulatedPeso(amount) + ' via ' + method), '</p>',
+                '</div>',
+                suggestedRange ? '<p class="chat-payment-help">Suggested range from request: ' + escapeHtml(suggestedRange) + '</p>' : '',
+                isPendingCash ? '<div class="mt-2"><button type="button" class="btn-charcoal" data-complete-cash-tour>Complete Tour</button></div>' : '',
+                '</article>'
+            ].join('');
+
+            const completeBtn = qs('[data-complete-cash-tour]', paymentCardHost);
+            if (!completeBtn) {
+                return;
+            }
+
+            completeBtn.addEventListener('click', function () {
+                const latest = getConversationPaymentState(conversationId);
+                if (!latest || String(latest.status || '').toLowerCase() !== 'pending_cash_on_tour') {
+                    return;
+                }
+
+                const settled = saveConversationPaymentState(conversationId, {
+                    status: 'paid',
+                    paidAt: nowISO(),
+                });
+
+                upsertSimulatedPaymentTransaction({
+                    conversationId: conversationId,
+                    requestId: String(settled && settled.requestId ? settled.requestId : ''),
+                    guideId: String(settled && settled.guideId ? settled.guideId : (activeConversation.guideId || '')),
+                    guideName: String(settled && settled.guideName ? settled.guideName : 'Guide'),
+                    touristName: String(activeConversation.touristName || 'Tourist'),
+                    tourTitle: String(settled && settled.tourTitle ? settled.tourTitle : (activeConversation.tourTitle || 'Tour request')),
+                    amount: Number(settled && settled.amount ? settled.amount : 0),
+                    paymentMethod: String(settled && settled.paymentMethod ? settled.paymentMethod : 'Cash on Tour'),
+                    status: 'paid',
+                    paidAt: nowISO(),
+                    date: nowISO(),
+                });
+
+                addSimulatedChatEvent({
+                    conversationId: conversationId,
+                    authorRole: 'system',
+                    text: 'Payment of ' + formatSimulatedPeso(Number(settled && settled.amount ? settled.amount : 0)) + ' received from Tourist',
+                    createdAt: nowISO(),
+                });
+
+                addSimulatedChatEvent({
+                    conversationId: conversationId,
+                    authorRole: 'guide',
+                    text: 'Cash on Tour marked as paid. Tour completed.',
+                    createdAt: nowISO(),
+                });
+
+                showToast('Tour marked complete and payment settled.', 'success');
+                renderMessages();
+                renderList();
+            });
+        }
+
         function renderList() {
             list.innerHTML = '';
             const visibleConversations = sortedConversations().filter(function (conversation) {
                 if (!activeSearch) {
                     return true;
                 }
-                const lastMessage = messagesByConversation[conversation.id] || [];
-                const tail = lastMessage.length ? lastMessage[lastMessage.length - 1].text : conversation.last;
+                const merged = getMergedConversationMessages(conversation.id);
+                const tail = merged.length ? merged[merged.length - 1].text : conversation.last;
                 const blob = [
                     conversation.touristName,
                     conversation.tourTitle,
@@ -3106,16 +3659,20 @@
             }
 
             visibleConversations.forEach(function (conversation) {
-                const tailList = messagesByConversation[conversation.id] || [];
-                const tail = tailList.length ? tailList[tailList.length - 1].text : conversation.last;
+                const merged = getMergedConversationMessages(conversation.id);
+                const tailMessage = merged.length ? merged[merged.length - 1] : null;
+                const tail = tailMessage ? tailMessage.text : conversation.last;
+                const tailTime = tailMessage ? tailMessage.createdAt : conversation.lastTime;
+                const paymentMeta = renderConversationPaymentMeta(conversation, merged);
                 const row = document.createElement('button');
                 row.type = 'button';
                 row.className = 'conversation-item' + (activeConversation && activeConversation.id === conversation.id ? ' active' : '');
                 row.dataset.conversationId = conversation.id;
                 row.innerHTML = [
                     '<img class="conversation-avatar" src="', escapeHtml(normalizeAssetPath(conversation.avatar, '/images/manila.jpg')), '" alt="', escapeHtml(conversation.touristName || 'Tourist'), '">',
-                    '<div class="flex-grow-1">',
-                    '<div class="d-flex justify-content-between"><strong>', escapeHtml(conversation.touristName || 'Tourist'), '</strong><small class="text-muted">', relativeTime(conversation.lastTime), '</small></div>',
+                    '<div class="conversation-card-content">',
+                    '<div class="d-flex justify-content-between"><strong>', escapeHtml(conversation.touristName || 'Tourist'), '</strong><small class="text-muted">', relativeTime(tailTime), '</small></div>',
+                    paymentMeta,
                     '<div class="small text-muted text-truncate" style="max-width:180px;">', escapeHtml(tail || 'No messages yet.'), '</div>',
                     '</div>',
                     conversation.unread > 0 ? '<span class="badge rounded-pill text-bg-warning">' + conversation.unread + '</span>' : ''
@@ -3131,16 +3688,19 @@
                     chatSubTitle.textContent = 'No active thread';
                 }
                 chatMessages.innerHTML = '';
+                setConversationVisibility(false);
+                renderPaymentCard();
                 return;
             }
 
+            setConversationVisibility(Boolean(mobileChatOpen));
             chatTitle.textContent = activeConversation.touristName || 'Tourist';
             if (chatSubTitle) {
                 chatSubTitle.textContent = activeConversation.tourTitle || 'Travel planning thread';
             }
 
             chatMessages.innerHTML = '';
-            const threadMessages = messagesByConversation[activeConversation.id] || [];
+            const threadMessages = getMergedConversationMessages(activeConversation.id);
             const lastMineMessage = threadMessages.slice().reverse().find(function (message) {
                 return message.mine;
             });
@@ -3181,6 +3741,7 @@
                 chatMessages.appendChild(row);
             });
             chatMessages.scrollTop = chatMessages.scrollHeight;
+            renderPaymentCard();
         }
 
         function syncThreads() {
@@ -3190,7 +3751,7 @@
                 }
 
                 const incoming = data && Array.isArray(data.conversations) ? data.conversations : [];
-                conversations = dedupeConversationsByPartner(incoming.map(normalizeConversation));
+                conversations = sortConversationsByLatest(incoming.map(normalizeConversation));
 
                 if (!activeConversation && conversations.length) {
                     if (routeConversationId) {
@@ -3202,10 +3763,22 @@
                     }
                 } else if (activeConversation) {
                     const match = conversations.find(function (item) {
-                        return item.id === activeConversation.id || item.partnerKey === activeConversation.partnerKey;
+                        return item.id === activeConversation.id;
                     });
                     if (match) {
                         activeConversation = match;
+                    }
+                }
+
+                if (activeConversation && routeRequestId) {
+                    activeConversation.tourRequestId = String(routeRequestId);
+                    const activeIndex = conversations.findIndex(function (item) {
+                        return item.id === String(activeConversation.id || '');
+                    });
+                    if (activeIndex >= 0) {
+                        conversations[activeIndex] = Object.assign({}, conversations[activeIndex], {
+                            tourRequestId: String(routeRequestId)
+                        });
                     }
                 }
 
@@ -3234,17 +3807,20 @@
                 const summary = data && data.conversation ? normalizeConversation(data.conversation) : null;
                 const messages = data && Array.isArray(data.messages) ? data.messages.map(normalizeMessage) : [];
                 if (summary) {
+                    if (routeRequestId) {
+                        summary.tourRequestId = String(routeRequestId);
+                    }
                     const index = conversations.findIndex(function (item) {
-                        return item.id === summary.id || item.partnerKey === summary.partnerKey;
+                        return item.id === summary.id;
                     });
                     if (index === -1) {
                         conversations.unshift(summary);
                     } else {
                         conversations[index] = Object.assign({}, conversations[index], summary, { unread: 0 });
                     }
-                    conversations = dedupeConversationsByPartner(conversations);
+                    conversations = sortConversationsByLatest(conversations);
                     activeConversation = conversations.find(function (item) {
-                        return item.id === summary.id || item.partnerKey === summary.partnerKey;
+                        return item.id === summary.id;
                     }) || summary;
                 }
 
@@ -3277,10 +3853,87 @@
             }
 
             activeConversation = found;
+            mobileChatOpen = true;
             activeConversation.unread = 0;
             renderList();
             loadConversation(id);
         });
+
+        if (chatBackBtn) {
+            chatBackBtn.addEventListener('click', function () {
+                mobileChatOpen = false;
+                setConversationVisibility(false);
+                if (conversationPanel) {
+                    conversationPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
+        }
+
+        if (chatShowListBtn) {
+            chatShowListBtn.addEventListener('click', function () {
+                mobileChatOpen = false;
+                setConversationVisibility(false);
+                if (conversationPanel) {
+                    conversationPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
+        }
+
+        if (chatRefreshBtn) {
+            chatRefreshBtn.addEventListener('click', function () {
+                if (activeConversation && activeConversation.id) {
+                    loadConversation(activeConversation.id).then(function () {
+                        syncThreads();
+                    });
+                    return;
+                }
+
+                syncThreads();
+            });
+        }
+
+        if (emojiToggle && emojiPanel) {
+            positionEmojiPanel = function () {
+                const toggleRect = emojiToggle.getBoundingClientRect();
+                const panelRect = emojiPanel.getBoundingClientRect();
+                const panelWidth = Number(panelRect.width || 190);
+
+                let left = toggleRect.left;
+                left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
+                const top = toggleRect.bottom + 8;
+
+                emojiPanel.style.position = 'fixed';
+                emojiPanel.style.left = Math.round(left) + 'px';
+                emojiPanel.style.top = Math.round(top) + 'px';
+                emojiPanel.style.right = 'auto';
+                emojiPanel.style.bottom = 'auto';
+            };
+
+            emojiToggle.addEventListener('click', function () {
+                const opening = emojiPanel.style.display !== 'block';
+                emojiPanel.style.display = opening ? 'block' : 'none';
+                if (opening) {
+                    positionEmojiPanel();
+                }
+            });
+
+            emojiPanel.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-emoji]');
+                if (!button) {
+                    return;
+                }
+                chatInput.value += String(button.dataset.emoji || '');
+                chatInput.focus();
+            });
+
+            document.addEventListener('click', function (event) {
+                const target = event.target;
+                const clickedToggle = target && target.closest ? target.closest('#emojiToggle') : null;
+                if (!emojiPanel.contains(target) && !clickedToggle) {
+                    emojiPanel.style.display = 'none';
+                }
+            });
+        }
 
         chatForm.addEventListener('submit', function (event) {
             event.preventDefault();
@@ -3350,6 +4003,30 @@
             });
         }
 
+        window.addEventListener('resize', function () {
+            setConversationVisibility(Boolean(activeConversation) && Boolean(mobileChatOpen));
+            if (emojiPanel && emojiPanel.style.display === 'block') {
+                positionEmojiPanel();
+            }
+        });
+
+        setConversationVisibility(Boolean(activeConversation) && Boolean(mobileChatOpen));
+
+        window.addEventListener('storage', function (event) {
+            if (!event) {
+                return;
+            }
+
+            if (
+                event.key === CHAT_PAYMENT_STATE_KEY
+                || event.key === CHAT_PAYMENT_TRANSACTIONS_KEY
+                || event.key === CHAT_SIMULATED_EVENTS_KEY
+            ) {
+                renderList();
+                renderMessages();
+            }
+        });
+
         if (typingIndicator) {
             typingIndicator.style.display = 'none';
         }
@@ -3369,15 +4046,7 @@
 
                 const key = String(incoming.conversationId);
                 const existingConversation = conversations.find(function (item) {
-                    if (item.id === key) {
-                        return true;
-                    }
-
-                    if (incoming.touristId && item.touristId && String(item.touristId) === String(incoming.touristId)) {
-                        return true;
-                    }
-
-                    return false;
+                    return item.id === key;
                 });
 
                 if (!existingConversation) {
@@ -3412,7 +4081,7 @@
                     existingConversation.unread = Number(existingConversation.unread || 0) + 1;
                 }
 
-                conversations = dedupeConversationsByPartner(conversations);
+                conversations = sortConversationsByLatest(conversations);
 
                 if (activeConversation && activeConversation.id === threadKey) {
                     loadConversation(threadKey);
@@ -3611,6 +4280,10 @@
             const relatedBooking = bookings.find(function (booking) {
                 return booking.tourId === review.tourId && String(booking.touristName || '').trim().toLowerCase() === String(review.reviewer || '').trim().toLowerCase();
             });
+            const reviewerAvatar = normalizeAssetPath(
+                review.reviewerAvatar || review.touristAvatar || (relatedBooking && relatedBooking.touristAvatar),
+                '/images/manila.jpg'
+            );
             const listingTitle = tour ? tour.title : String(review.listingTitle || 'Tour Listing');
             const bookedDateText = relatedBooking
                 ? escapeHtml(formatDate(relatedBooking.bookingDate)) + ' • ' + escapeHtml(relatedBooking.guests || '1 guest')
@@ -3620,7 +4293,7 @@
             row.innerHTML = [
                 '<p class="small text-muted mb-1">Booked Listing</p>',
                 '<p class="mb-1"><strong>', escapeHtml(listingTitle), '</strong></p>',
-                '<p class="small mb-1">Tourist: ', escapeHtml(review.reviewer), '</p>',
+                '<p class="small mb-1 d-flex align-items-center gap-2"><img src="', escapeHtml(reviewerAvatar), '" alt="', escapeHtml(review.reviewer), '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">Tourist: ', escapeHtml(review.reviewer), '</p>',
                 '<p class="small mb-1">Rating: <strong>', '★'.repeat(Math.max(1, Math.min(5, Number(review.rating || 0)))), '</strong></p>',
                 '<p class="small text-muted mb-2">Booked date: ' + bookedDateText + '</p>',
                 '<p class="small text-muted mb-0">', escapeHtml(review.comment), '</p>'
@@ -3641,6 +4314,7 @@
                 id: String(source.id || uid('booking')),
                 tourId: source.tourId ? String(source.tourId) : '',
                 touristName: String(source.touristName || 'Tourist'),
+                touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
                 bookingDate: source.bookingDate || null,
                 guests: String(source.guests || (guestCount + ' guest' + (guestCount > 1 ? 's' : ''))),
                 status: String(source.statusRaw || source.status || 'pending').trim().toLowerCase()
@@ -3654,6 +4328,7 @@
                 tourId: String(source.tourId || ''),
                 listingTitle: String(source.listingTitle || 'Tour Listing'),
                 reviewer: String(source.reviewer || 'Tourist'),
+                reviewerAvatar: normalizeAssetPath(source.reviewerAvatar || source.touristAvatar || source.avatar, '/images/manila.jpg'),
                 rating: Math.max(1, Math.min(5, Number(source.rating || 0))),
                 comment: String(source.comment || ''),
                 bookedDate: source.bookedDate || null,
@@ -3722,8 +4397,145 @@
             }
         }
 
+        function renderSimulatedEarningsPanel() {
+            const totalNode = qs('#simulatedEarningsValue');
+            const listNode = qs('#simulatedTransactionList');
+            if (!totalNode && !listNode) {
+                return;
+            }
+
+            const transactions = getSimulatedPaymentTransactions()
+                .filter(function (item) {
+                    return item && typeof item === 'object';
+                });
+
+            const paymentStateMap = getChatPaymentStateMap();
+            Object.keys(paymentStateMap).forEach(function (key) {
+                const state = paymentStateMap[key];
+                if (!state || typeof state !== 'object' || !(Number(state.amount || 0) > 0)) {
+                    return;
+                }
+
+                const status = String(state.status || '').toLowerCase();
+                if (status !== 'paid' && status !== 'pending_cash_on_tour') {
+                    return;
+                }
+
+                const requestId = String(state.requestId || '').trim();
+                const conversationId = String(state.conversationId || key || '').trim();
+                const matchIndex = transactions.findIndex(function (item) {
+                    if (!item || typeof item !== 'object') {
+                        return false;
+                    }
+                    if (requestId && String(item.requestId || '').trim() === requestId) {
+                        return true;
+                    }
+                    if (conversationId && String(item.conversationId || '').trim() === conversationId) {
+                        return true;
+                    }
+                    return false;
+                });
+
+                const normalized = {
+                    id: String(state.id || ('pay-state-' + conversationId)),
+                    conversationId: conversationId,
+                    requestId: requestId,
+                    guideId: String(state.guideId || ''),
+                    guideName: String(state.guideName || 'Guide'),
+                    touristName: 'Tourist',
+                    tourTitle: String(state.tourTitle || 'Tour request'),
+                    amount: Math.max(0, Number(state.amount || 0)),
+                    paymentMethod: String(state.paymentMethod || 'N/A'),
+                    status: status,
+                    paidAt: status === 'paid' ? String(state.paidAt || state.updatedAt || nowISO()) : null,
+                    date: String(state.updatedAt || state.paidAt || state.pendingAt || nowISO()),
+                    updatedAt: String(state.updatedAt || nowISO()),
+                    createdAt: String(state.createdAt || state.updatedAt || nowISO())
+                };
+
+                if (matchIndex >= 0) {
+                    transactions[matchIndex] = Object.assign({}, transactions[matchIndex], normalized);
+                } else {
+                    transactions.push(normalized);
+                }
+            });
+
+            transactions.sort(function (a, b) {
+                const left = Date.parse(String((a && (a.paidAt || a.date || a.updatedAt || a.createdAt)) || '')) || 0;
+                const right = Date.parse(String((b && (b.paidAt || b.date || b.updatedAt || b.createdAt)) || '')) || 0;
+                return right - left;
+            });
+
+            const paidTransactions = transactions.filter(function (item) {
+                return String(item.status || '').toLowerCase() === 'paid';
+            });
+
+            const total = paidTransactions.reduce(function (sum, item) {
+                return sum + Math.max(0, Number(item.amount || 0));
+            }, 0);
+
+            if (totalNode) {
+                totalNode.textContent = formatSimulatedPeso(total);
+            }
+
+            if (!listNode) {
+                return;
+            }
+
+            if (!transactions.length) {
+                listNode.innerHTML = '<div class="simulated-transaction-empty">No payment transactions yet.</div>';
+                return;
+            }
+
+            const conversationAvatarById = new Map();
+            const storedConversations = readStore(GUIDE_CONVERSATIONS_KEY, []);
+            (Array.isArray(storedConversations) ? storedConversations : []).forEach(function (conversation) {
+                if (!conversation || typeof conversation !== 'object') {
+                    return;
+                }
+                const conversationId = String(conversation.id || '').trim();
+                if (!conversationId) {
+                    return;
+                }
+                conversationAvatarById.set(conversationId, normalizeAssetPath(conversation.avatar, '/images/manila.jpg'));
+            });
+
+            listNode.innerHTML = transactions.map(function (item) {
+                const amount = formatSimulatedPeso(Number(item.amount || 0));
+                const method = String(item.paymentMethod || 'N/A');
+                const tourist = String(item.touristName || 'Tourist');
+                const title = String(item.tourTitle || 'Tour request');
+                const status = String(item.status || '').toLowerCase() === 'paid' ? 'PAID' : 'Pending (Cash on Tour)';
+                const statusClass = String(item.status || '').toLowerCase() === 'paid' ? 'paid' : 'pending';
+                const conversationId = String(item.conversationId || '').trim();
+                const avatarSource = item.touristAvatar || item.avatar || (conversationId ? conversationAvatarById.get(conversationId) : null) || '/images/manila.jpg';
+                const avatar = normalizeAssetPath(avatarSource, '/images/manila.jpg');
+                const rawDate = String(item.paidAt || item.date || item.updatedAt || item.createdAt || '');
+                const parsedDate = rawDate ? new Date(rawDate) : null;
+                const dateLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
+                    ? parsedDate.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : 'Unknown time';
+
+                return [
+                    '<article class="simulated-transaction-row">',
+                    '<div class="simulated-transaction-main">',
+                    '<img class="simulated-transaction-avatar" src="', escapeHtml(avatar), '" alt="', escapeHtml(tourist), '" onerror="this.onerror=null;this.src=\'/images/manila.jpg\';">',
+                    '<div class="simulated-transaction-content">',
+                    '<strong class="simulated-transaction-name">', escapeHtml(tourist), '</strong>',
+                    '<div class="simulated-transaction-title meta">', escapeHtml(title), '</div>',
+                    '<div class="simulated-transaction-status-line"><span class="chat-payment-badge ', statusClass, '">', escapeHtml(status), '</span></div>',
+                    '<div class="simulated-transaction-date meta">', escapeHtml(dateLabel), '</div>',
+                    '<div class="simulated-transaction-amount-line"><span class="amount">', escapeHtml(amount), '</span><span class="meta"> · </span><span class="method">', escapeHtml(method), '</span></div>',
+                    '</div>',
+                    '</div>',
+                    '</article>'
+                ].join('');
+            }).join('');
+        }
+
         function renderDashboard(statsSnapshot) {
             renderStatsFromSnapshot(statsSnapshot);
+            renderSimulatedEarningsPanel();
             renderPendingBookingsSummary(qs('#dashboardPendingList'));
             renderReviewsSummary(qs('#dashboardReviewList'));
         }
@@ -3755,9 +4567,50 @@
 
             renderDashboard(dashboardPayload && dashboardPayload.stats ? dashboardPayload.stats : null);
         });
+
+        window.addEventListener('storage', function (event) {
+            if (event && (event.key === CHAT_PAYMENT_TRANSACTIONS_KEY || event.key === CHAT_PAYMENT_STATE_KEY)) {
+                renderSimulatedEarningsPanel();
+            }
+        });
     }
 
     function initGlobalActions() {
+        qsa('.hamburger-dropdown').forEach(function (menu) {
+            if (!qs('[data-hamburger-logout]', menu)) {
+                const divider = document.createElement('li');
+                divider.innerHTML = '<hr class="dropdown-divider">';
+
+                const logoutItem = document.createElement('li');
+                logoutItem.innerHTML = '<button class="dropdown-item text-danger" type="button" data-hamburger-logout><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button>';
+
+                menu.appendChild(divider);
+                menu.appendChild(logoutItem);
+            }
+
+            if (menu.dataset.boundLogoutAction === 'true') {
+                return;
+            }
+
+            menu.addEventListener('click', function (event) {
+                const clickedItem = event.target.closest('.dropdown-item');
+                if (clickedItem) {
+                    document.body.classList.remove('sidebar-open');
+                }
+
+                const logoutItem = event.target.closest('[data-hamburger-logout]');
+                if (!logoutItem) {
+                    return;
+                }
+
+                event.preventDefault();
+                closeContainingDropdown(logoutItem);
+                logoutToAuthPage();
+            });
+
+            menu.dataset.boundLogoutAction = 'true';
+        });
+
         const logout = qs('#logoutBtn');
         if (logout) {
             logout.addEventListener('click', function (event) {
@@ -3779,6 +4632,9 @@
         // Bind global actions first so critical controls (like logout) keep working even if other modules fail.
         runInitStep('global-actions', initGlobalActions);
         runInitStep('seed-data', ensureSeedData);
+        runInitStep('workspace-profile', function () {
+            applyGuideWorkspaceIdentity(getGuideProfile());
+        });
         runInitStep('sync-guide-profile', syncGuideProfileFromApi);
         runInitStep('sidebar', initSidebar);
         runInitStep('topbar-scroll', initTopbarScroll);

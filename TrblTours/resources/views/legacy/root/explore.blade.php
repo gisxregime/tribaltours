@@ -37,7 +37,7 @@
             <div class="sidebar-header">
                 <div>
                     <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
-                    <small class="text-muted">Tourist Workspace - {{ auth()->user()?->name ?? 'Tourist' }}</small>
+                    <small class="text-muted">Tourist Workspace</small>
                 </div>
             </div>
             <nav class="sidebar-nav">
@@ -99,7 +99,6 @@
 
             <main class="content-wrap">
                 <section class="page-header">
-                    <p class="text-muted small mb-2">Account owner: {{ auth()->user()?->name ?? 'Tourist' }}</p>
                     <h1 class="page-title">Find Your Perfect Adventure in the Philippines</h1>
                 </section>
 

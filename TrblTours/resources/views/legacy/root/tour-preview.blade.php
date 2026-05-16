@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="{{ asset('assets/styles.css') }}">
+    <link rel="stylesheet" href="{{ asset('assets/styles.css') }}?v={{ filemtime(public_path('assets/styles.css')) }}">
 </head>
 
 <body class="account-page" data-page="explore" data-view="tour-preview" data-require-auth="true">
@@ -60,7 +60,6 @@
                         <ul class="dropdown-menu hamburger-dropdown">
                             <li><h6 class="dropdown-header">Navigation</h6></li>
                             <li><a class="dropdown-item" href="{{ route('explore') }}"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
-                            <li><a class="dropdown-item" href="#"><i class="fa-solid fa-bell"></i>Notifications <span class="hamburger-badge">0</span></a></li>
                             <li><a class="dropdown-item" href="{{ route('my-posts') }}"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
                             <li><a class="dropdown-item" href="{{ route('my-bookings') }}"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
                             <li><a class="dropdown-item" href="{{ route('likes') }}"><i class="fa-solid fa-heart"></i>Likes</a></li>
@@ -128,13 +127,6 @@
                             <div id="tourPreviewReviewList" class="guide-layout-grid mt-2"></div>
                         </section>
 
-                        <section class="activity-listing mt-3" id="tourPreviewSimilarSection">
-                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                                <h2 class="h4 mb-0">Similar Tours</h2>
-                            </div>
-                            <p id="tourPreviewSimilarEmpty" class="small text-muted mt-2 mb-0">No similar tours available yet.</p>
-                            <div id="tourPreviewSimilarList" class="tour-preview-similar-grid mt-3"></div>
-                        </section>
                     </section>
 
                     <aside class="booking-sticky">
@@ -183,12 +175,30 @@
                         </div>
                     </aside>
                 </div>
+
+                <section class="mt-4" aria-labelledby="tourPreviewSimilarHeading">
+                    <h2 id="tourPreviewSimilarHeading" class="h4 mb-2">Similar Tours</h2>
+                    <p id="tourPreviewSimilarEmpty" class="small text-muted mb-0">No similar tours available yet.</p>
+                    <div id="tourPreviewSimilarList" class="feed-grid mt-3" aria-label="Similar tours"></div>
+                </section>
+
             </main>
         </div>
     </div>
 
+    <div class="modal fade tour-preview-image-modal" id="tourPreviewImageModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content">
+                <div class="modal-body p-0 position-relative">
+                    <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close image preview"></button>
+                    <img id="tourPreviewImageFull" src="" alt="Tour image preview" class="tour-preview-image-full">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ asset('assets/app.js') }}"></script>
+    <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}"></script>
 </body>
 
 </html>

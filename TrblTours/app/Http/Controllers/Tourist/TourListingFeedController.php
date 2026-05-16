@@ -149,7 +149,7 @@ class TourListingFeedController extends Controller
         if ($withRecentReviews) {
             $payload['recentReviews'] = $tourListing->reviews()
                 ->where('is_public', true)
-                ->with(['tourist:id,name'])
+                ->with(['tourist:id,name,avatar_path'])
                 ->latest('created_at')
                 ->limit(12)
                 ->get()
@@ -157,6 +157,8 @@ class TourListingFeedController extends Controller
                     return [
                         'id' => (string) $review->id,
                         'touristName' => trim((string) ($review->tourist?->name ?? 'Tourist')) ?: 'Tourist',
+                        'touristAvatar' => $this->resolveAvatarPath($review->tourist?->avatar_path),
+                        'reviewerAvatar' => $this->resolveAvatarPath($review->tourist?->avatar_path),
                         'rating' => (int) ($review->rating ?? 0),
                         'title' => (string) ($review->title ?? ''),
                         'comment' => (string) ($review->comment ?? ''),
