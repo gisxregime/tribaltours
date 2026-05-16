@@ -57,7 +57,7 @@
                             <i class="fa-solid fa-bars"></i>
                         </button>
                         <ul class="dropdown-menu hamburger-dropdown">
-                            <li><p class="side-label">Navigation</p></li>
+                            <li><h6 class="dropdown-header">Navigation</h6></li>
                             <li><a class="dropdown-item" href="{{ route('guide.dashboard') }}"><i
                                         class="fa-solid fa-chart-line"></i>Dashboard</a></li>
                             <li><a class="dropdown-item" href="{{ route('guide.request-feed.page') }}"><i

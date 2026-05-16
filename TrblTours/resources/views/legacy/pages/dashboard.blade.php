@@ -45,6 +45,7 @@
                             <i class="fa-solid fa-bars"></i>
                         </button>
                         <ul class="dropdown-menu hamburger-dropdown">
+                            <li><h6 class="dropdown-header">Navigation</h6></li>
                             <li><a class="dropdown-item" href="{{ route('guide.dashboard') }}"><i class="fa-solid fa-chart-line"></i>Dashboard</a></li>
                             <li><a class="dropdown-item" href="{{ route('guide.request-feed.page') }}"><i class="fa-solid fa-clipboard-list"></i>Request Post Feed</a></li>
                             <li><a class="dropdown-item" href="{{ route('guide.booking-requests.index') }}"><i class="fa-solid fa-inbox"></i>Booking Requests</a></li>
