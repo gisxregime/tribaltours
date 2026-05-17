@@ -11,7 +11,7 @@
     const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
     const GUIDE_NOTIFICATIONS_KEY = 'tribaltours_guide_notifications_v1';
     const GUIDE_CONVERSATIONS_KEY = 'tribaltours_guide_conversations_v1';
-    const GUIDE_STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const GUIDE_STARTER_MESSAGE = "Hi! 👋 Welcome and thank you for choosing me as your guide. I'm excited to help make your trip enjoyable and memorable. Feel free to tell me your preferred destination, travel dates, group size, interests (adventure, culture, food, nature, etc.), or any questions you have. I'll help you plan the experience that fits you best.";
     const REQUEST_DEFAULT_REGION = 'Davao del Norte';
 
     const TOUR_CATALOG = {
@@ -477,13 +477,16 @@
         if (value.startsWith('data:') || value.startsWith('http://') || value.startsWith('https://')) {
             return value;
         }
-        if (value.startsWith('../')) {
-            return value.replace(/^\.\.\//, '');
+        if (value.startsWith('/')) {
+            return value;
         }
-        if (value.startsWith('./')) {
-            return value.replace(/^\.\//, '');
+
+        const normalized = value.replace(/^\.\//, '').replace(/^\.\.\//, '');
+        if (normalized.startsWith('images/') || normalized.startsWith('storage/')) {
+            return '/' + normalized;
         }
-        return value;
+
+        return '/storage/' + normalized.replace(/^\/+/, '');
     }
 
     function getGuideToursCatalog() {
@@ -658,7 +661,7 @@
             return conversation.id === conversationId;
         });
 
-        const introText = 'I selected you as my tour guide for ' + tourTitle + '.';
+        const introText = 'Hello! 😊 I selected you as my guide and I’m excited to learn more. I’m looking for a great travel experience and would love to discuss the details with you.';
         if (!existingConversation) {
             conversations.unshift({
                 id: conversationId,

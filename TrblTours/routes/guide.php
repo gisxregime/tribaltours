@@ -26,8 +26,12 @@ Route::middleware(['auth', 'verified', 'role:guide'])->prefix('guide')->as('guid
     Route::get('earnings-breakdown', [GuideDashboardController::class, 'earningsBreakdown'])->name('earnings-breakdown');
     Route::get('request-payments', [GuideDashboardController::class, 'requestPayments'])->name('request-payments');
     Route::get('reviews', [GuideDashboardController::class, 'reviewsPage'])->name('reviews');
+    Route::post('tours/{tourListing}/delete', [TourListingController::class, 'destroyViaPost'])->name('tours.delete');
     Route::resource('tours', TourListingController::class);
     Route::resource('booking-requests', BookingRequestController::class)
         ->parameters(['booking-requests' => 'booking']);
+    Route::patch('booking-requests/{booking}/set-date', [BookingRequestController::class, 'setDate'])->name('booking-requests.set-date');
+    Route::patch('booking-requests/{booking}/accept', [BookingRequestController::class, 'accept'])->name('booking-requests.accept');
+    Route::patch('booking-requests/{booking}/decline', [BookingRequestController::class, 'decline'])->name('booking-requests.decline');
     Route::resource('availabilities', AvailabilityController::class);
 });

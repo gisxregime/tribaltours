@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Booking;
 use App\Models\Conversation;
+use App\Models\TourListing;
 use App\Models\TourRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -212,11 +213,17 @@ class NotificationController extends Controller
     {
         $candidates = [
             $data['actor_id'] ?? null,
+            $data['sender_id'] ?? null,
             $payload['actorId'] ?? null,
+            $payload['actor_id'] ?? null,
             $payload['senderId'] ?? null,
+            $payload['sender_id'] ?? null,
             $payload['guideId'] ?? null,
+            $payload['guide_id'] ?? null,
             $payload['touristId'] ?? null,
+            $payload['tourist_id'] ?? null,
             $payload['selectedGuideId'] ?? null,
+            $payload['selected_guide_id'] ?? null,
         ];
 
         foreach ($candidates as $candidate) {
@@ -240,7 +247,7 @@ class NotificationController extends Controller
         $actorId = $this->extractActorId($data, $payload);
 
         if ($actorId <= 0) {
-            $conversationId = $this->extractPositiveInt($payload['conversationId'] ?? null);
+            $conversationId = $this->extractPositiveInt($payload['conversationId'] ?? $payload['conversation_id'] ?? null);
             if ($conversationId > 0) {
                 $conversation = Conversation::query()
                     ->select(['id', 'tourist_id', 'guide_id'])
@@ -256,7 +263,7 @@ class NotificationController extends Controller
         }
 
         if ($actorId <= 0) {
-            $requestId = $this->extractPositiveInt($payload['requestId'] ?? null);
+            $requestId = $this->extractPositiveInt($payload['requestId'] ?? $payload['request_id'] ?? null);
             if ($requestId > 0) {
                 $tourRequest = TourRequest::query()
                     ->select(['id', 'tourist_id', 'selected_guide_id'])
@@ -272,7 +279,22 @@ class NotificationController extends Controller
         }
 
         if ($actorId <= 0) {
-            $bookingId = $this->extractPositiveInt($payload['bookingId'] ?? null);
+            $tourId = $this->extractPositiveInt($payload['tourId'] ?? $payload['tour_id'] ?? $data['tour_id'] ?? null);
+            if ($tourId > 0) {
+                $tourListing = TourListing::query()
+                    ->select(['id', 'guide_id'])
+                    ->find($tourId);
+
+                if ($tourListing) {
+                    $actorId = $this->pickCounterpartUserId([
+                        (int) $tourListing->guide_id,
+                    ], $currentUserId);
+                }
+            }
+        }
+
+        if ($actorId <= 0) {
+            $bookingId = $this->extractPositiveInt($payload['bookingId'] ?? $payload['booking_id'] ?? null);
             if ($bookingId > 0) {
                 $booking = Booking::query()
                     ->select(['id', 'tourist_id', 'guide_id'])

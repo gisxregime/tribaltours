@@ -125,6 +125,7 @@
                                 <a href="{{ route('guide.request-payments') }}" class="dash-view-more">View More <i class="fa-solid fa-angle-right"></i></a>
                             </div>
                         </div>
+                        <p id="simulatedTransactionMeta" class="small text-muted mb-2"></p>
                         <div id="simulatedTransactionList" class="simulated-transaction-list"></div>
                     </article>
                 </section>
@@ -141,6 +142,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ asset('assets/guide.js') }}"></script>
+    <script src="{{ asset('assets/guide.js') }}?v={{ filemtime(public_path('assets/guide.js')) }}"></script>
 </body>
 </html>

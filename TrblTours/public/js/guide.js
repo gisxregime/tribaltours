@@ -187,7 +187,9 @@
             rating: normalized.rating,
             reviews: normalized.reviews,
             status: normalized.status,
+            cover_image_path: normalized.coverImage || normalized.image,
             coverImage: normalized.coverImage || normalized.image,
+            gallery_paths: normalized.gallery,
             gallery: normalized.gallery
         };
     }
@@ -271,17 +273,20 @@
                 return String(tag || '').trim();
             });
         const cleanTags = tags.filter(Boolean).slice(0, 6);
-        const minGuests = Math.max(1, Number(raw.minGuests || 1));
-        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || 10));
+        const minGuests = Math.max(1, Number(raw.minGuests || raw.min_guests || 1));
+        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || raw.max_guests || 10));
         const guestTypes = parseList(raw.guestTypes, ['Adult']);
-        const timeSlots = parseList(raw.timeSlots, ['08:00 AM', '01:00 PM', '05:00 PM']);
+        const timeSlots = parseList(raw.timeSlots || raw.time_slots_json, ['08:00 AM', '01:00 PM', '05:00 PM']);
         const includes = parseList(raw.includes, ['Boat transfer', 'Entrance fees']);
-        const gallery = Array.isArray(raw.gallery)
-            ? raw.gallery.map(function (src) {
+        const rawGallery = Array.isArray(raw.gallery)
+            ? raw.gallery
+            : (Array.isArray(raw.gallery_paths) ? raw.gallery_paths : []);
+        const gallery = rawGallery
+            .map(function (src) {
                 return String(src || '').trim();
             }).filter(Boolean).slice(0, 10)
-            : [];
-        const fallbackImage = String(raw.coverImage || raw.image || gallery[0] || '../images/carousel2.jpg').trim() || '../images/carousel2.jpg';
+        ;
+        const fallbackImage = String(raw.coverImage || raw.cover_image_path || raw.image || gallery[0] || '../images/carousel2.jpg').trim() || '../images/carousel2.jpg';
         const finalGallery = gallery.length ? gallery : [fallbackImage];
 
         return {
@@ -290,10 +295,10 @@
             category: String(raw.category || 'Island Hopping').trim(),
             province: String(raw.province || '').trim(),
             city: String(raw.city || '').trim(),
-            meetingArea: String(raw.meetingArea || '').trim(),
+            meetingArea: String(raw.meetingArea || raw.meeting_area || '').trim(),
             location: String(raw.location || ((raw.city || '') + (raw.province ? ', ' + raw.province : ''))).trim(),
-            duration: String(raw.duration || '2 days').trim(),
-            durationHours: String(raw.durationHours || raw.duration || '2 days').trim(),
+            duration: String(raw.duration || raw.duration_label || '2 days').trim(),
+            durationHours: String(raw.durationHours || raw.duration || raw.duration_label || '2 days').trim(),
             minGuests: minGuests,
             maxGuests: maxGuests,
             pax: String(raw.pax || (String(minGuests) + '-' + String(maxGuests) + ' guests')).trim(),
@@ -303,30 +308,30 @@
             rating: Math.min(Math.max(Number(raw.rating || 0), 0), 5),
             reviews: Math.max(0, Math.round(Number(raw.reviews || 0))),
             price: Math.max(1, Math.round(Number(raw.price || 0))),
-            priceType: String(raw.priceType || 'Per person').trim(),
-            reservationType: String(raw.reservationType || 'Instant booking').trim(),
+            priceType: String(raw.priceType || raw.price_type || 'Per person').trim(),
+            reservationType: String(raw.reservationType || raw.reservation_type || 'Instant booking').trim(),
             status: String(raw.status || 'Draft').trim(),
             provider: String(raw.provider || raw.guide || defaultProvider).trim() || defaultProvider,
             languages: String(raw.languages || defaultLanguages).trim() || defaultLanguages,
-            meetingPoint: String(raw.meetingPoint || 'Main tourist pickup point').trim() || 'Main tourist pickup point',
-            freeCancellation: parseBool(raw.freeCancellation, true),
+            meetingPoint: String(raw.meetingPoint || raw.meeting_point || 'Main tourist pickup point').trim() || 'Main tourist pickup point',
+            freeCancellation: parseBool(raw.freeCancellation != null ? raw.freeCancellation : raw.free_cancellation, true),
             cancellationText: String(raw.cancellationText || 'Cancel up to 24 hours in advance for a full refund').trim(),
-            reserveNowPayLater: parseBool(raw.reserveNowPayLater, true),
+            reserveNowPayLater: parseBool(raw.reserveNowPayLater != null ? raw.reserveNowPayLater : raw.reserve_now_pay_later, true),
             includes: includes,
             excludes: String(raw.excludes || '').trim(),
             requirements: String(raw.requirements || '').trim(),
-            safetyInfo: String(raw.safetyInfo || '').trim(),
+            safetyInfo: String(raw.safetyInfo || raw.safety_info || '').trim(),
             guidePhoto: String(raw.guidePhoto || profile.avatar || '../images/manila.jpg').trim() || '../images/manila.jpg',
             guideVerified: parseBool(raw.guideVerified, false),
             guideExperienceYears: Math.max(0, Number(raw.guideExperienceYears || 1)),
             guideContact: String(raw.guideContact || '').trim(),
             guideSocial: String(raw.guideSocial || '').trim(),
             tags: cleanTags,
-            weatherSuitability: String(raw.weatherSuitability || '').trim(),
-            bestSeason: String(raw.bestSeason || '').trim(),
-            childFriendly: parseBool(raw.childFriendly, false),
-            petFriendly: parseBool(raw.petFriendly, false),
-            description: String(raw.description || '').trim(),
+            weatherSuitability: String(raw.weatherSuitability || raw.weather_suitability || '').trim(),
+            bestSeason: String(raw.bestSeason || raw.best_season || '').trim(),
+            childFriendly: parseBool(raw.childFriendly != null ? raw.childFriendly : raw.child_friendly, false),
+            petFriendly: parseBool(raw.petFriendly != null ? raw.petFriendly : raw.pet_friendly, false),
+            description: String(raw.description || raw.short_description || '').trim(),
             image: finalGallery[0],
             coverImage: finalGallery[0],
             gallery: finalGallery
@@ -1863,8 +1868,7 @@
                     '<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-3">',
                     '<strong>', formatPeso(tour.price), '</strong>',
                     '<div class="d-flex gap-2">',
-                    '<a class="btn-soft" href="../tour-preview.html?tour=', encodeURIComponent(tour.id), '" target="_blank" rel="noopener">Preview</a>',
-                    '<button class="btn-soft" type="button" data-toggle-publish="', escapeHtml(tour.id), '">', tour.status === 'Published' ? 'Unpublish' : 'Publish', '</button>',
+                    '<a class="btn-soft" href="/tour-preview?tour=', encodeURIComponent(tour.id), '&from=guide">Preview</a>',
                     '<button class="btn-soft" type="button" data-edit-tour="', escapeHtml(tour.id), '">Edit</button>',
                     '<button class="btn-danger" type="button" data-delete-tour="', escapeHtml(tour.id), '">Delete</button>',
                     '</div>',
@@ -2065,31 +2069,6 @@
                     });
                     applyPayloadToForm(tour, true);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-                    return;
-                }
-
-                const publishBtn = event.target.closest('[data-toggle-publish]');
-                if (publishBtn) {
-                    const id = publishBtn.dataset.togglePublish;
-                    const currentTour = getGuideTours().find(function (tour) {
-                        return String(tour.id) === String(id);
-                    });
-                    if (!currentTour) {
-                        return;
-                    }
-                    const nextStatus = currentTour.status === 'Published' ? 'Paused' : 'Published';
-                    const payload = Object.assign({}, currentTour, { status: nextStatus });
-                    saveTourToApi(payload, id).then(function (result) {
-                        const listing = result && result.listing ? mapApiListingToGuideTour(result.listing) : payload;
-                        const tours = getGuideTours().map(function (tour) {
-                            return String(tour.id) === String(id) ? listing : tour;
-                        });
-                        setGuideTours(tours);
-                        render();
-                        showToast('Listing status updated.', 'success');
-                    }).catch(function () {
-                        showToast('Unable to update listing status.', 'danger');
-                    });
                     return;
                 }
 

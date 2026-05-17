@@ -93,6 +93,6 @@
             cluster: @json(env('PUSHER_APP_CLUSTER', 'ap1'))
         };
     </script>
-    <script src="{{ asset('assets/guide.js') }}"></script>
+    <script src="{{ asset('assets/guide.js') }}?v={{ filemtime(public_path('assets/guide.js')) }}"></script>
 </body>
 </html>

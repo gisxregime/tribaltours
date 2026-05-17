@@ -13,6 +13,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TourController;
+use App\Http\Controllers\Tourist\TourListingFeedController as TouristTourListingFeedController;
 use App\Http\Controllers\TouristController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -42,7 +43,12 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->group(function () {
         ->name('messages.guide');
     Route::get('/profile', [ProfileController::class, 'tourist'])->name('profile');
     Route::get('/settings', [ProfileController::class, 'settings'])->name('settings');
+});
+
+Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/tour-preview', [TourController::class, 'preview'])->name('tour-preview');
+    Route::get('/catalog/tours/feed', [TouristTourListingFeedController::class, 'index'])->name('catalog.tours.feed');
+    Route::get('/catalog/tours/feed/{tourListing}', [TouristTourListingFeedController::class, 'show'])->name('catalog.tours.feed.show');
 });
 
 Route::middleware(['auth', 'verified'])->prefix('notifications')->name('notifications.')->group(function () {
@@ -67,6 +73,13 @@ Route::middleware(['auth', 'verified', 'role:guide'])->prefix('guide')->name('gu
     Route::get('profile', [GuideController::class, 'profile'])->name('profile');
     Route::get('settings', [GuideController::class, 'settings'])->name('settings');
     Route::get('availability', [GuideController::class, 'availability'])->name('availability');
+});
+
+Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('api')->name('api.')->group(function () {
+    Route::post('payment/success', [\App\Http\Controllers\Tourist\BookingController::class, 'paymentSuccess'])->name('payment.success');
+    Route::post('booking/set-date', [\App\Http\Controllers\Tourist\BookingController::class, 'setDate'])->name('booking.set-date');
+    Route::get('my-bookings', [\App\Http\Controllers\Tourist\BookingController::class, 'mine'])->name('my-bookings');
+    Route::patch('booking/{booking}/complete', [\App\Http\Controllers\Tourist\BookingController::class, 'complete'])->name('booking.complete');
 });
 
 Route::get('/register/step/{step?}', [MultiStepRegistrationController::class, 'showStep'])

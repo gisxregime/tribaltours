@@ -53,7 +53,11 @@ class GuideDashboardController extends Controller
             'my_tours' => TourListing::query()->where('guide_id', $guideId)->count(),
             'pending_requests' => Booking::query()->where('guide_id', $guideId)->where('status', 'pending')->count(),
             'accepted' => Booking::query()->where('guide_id', $guideId)->whereIn('status', ['accepted', 'confirmed', 'completed', 'booked'])->count(),
-            'total_earnings' => (float) Booking::query()->where('guide_id', $guideId)->whereIn('status', ['accepted', 'confirmed', 'completed', 'booked'])->sum('total_amount'),
+            'total_earnings' => (float) Booking::query()
+                ->where('guide_id', $guideId)
+                ->where('payment_status', 'paid')
+                ->whereNotIn('status', ['cancelled', 'declined'])
+                ->sum('total_amount'),
             'average_rating' => round((float) Review::query()->whereIn('tour_listing_id', $listingIds)->where('is_public', true)->avg('rating'), 1),
         ];
     }

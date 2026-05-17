@@ -8,7 +8,7 @@
     const GUIDE_TOUR_DRAFT_KEY = 'tribaltours_guide_tour_form_draft_v1';
     const TOURIST_REQUESTS_KEY = 'tribaltours_tourist_requests_v1';
     const ROLE_KEY = 'role';
-    const STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const STARTER_MESSAGE = "Hi! 👋 Welcome and thank you for choosing me as your guide. I'm excited to help make your trip enjoyable and memorable. Feel free to tell me your preferred destination, travel dates, group size, interests (adventure, culture, food, nature, etc.), or any questions you have. I'll help you plan the experience that fits you best.";
     const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
 
     const pendingGuideNotificationDeletes = Object.create(null);
@@ -178,8 +178,8 @@
                 return String(tag || '').trim();
             });
         const cleanTags = tags.filter(Boolean).slice(0, 6);
-        const minGuests = Math.max(1, Number(raw.minGuests || 1));
-        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || 10));
+        const minGuests = Math.max(1, Number(raw.minGuests || raw.min_guests || 1));
+        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || raw.max_guests || 10));
         const guestTypes = parseList(raw.guestTypes, ['Adult']);
         const timeSlots = parseList(raw.timeSlots, ['08:00 AM', '01:00 PM', '05:00 PM']);
         const includes = parseList(raw.includes, ['Boat transfer', 'Entrance fees']);
@@ -199,8 +199,8 @@
             city: String(raw.city || '').trim(),
             meetingArea: String(raw.meetingArea || '').trim(),
             location: String(raw.location || ((raw.city || '') + (raw.province ? ', ' + raw.province : ''))).trim(),
-            duration: String(raw.duration || '2 days').trim(),
-            durationHours: String(raw.durationHours || raw.duration || '2 days').trim(),
+            duration: String(raw.duration || raw.duration_label || '2 days').trim(),
+            durationHours: String(raw.durationHours || raw.duration || raw.duration_label || '2 days').trim(),
             minGuests: minGuests,
             maxGuests: maxGuests,
             pax: String(raw.pax || (String(minGuests) + '-' + String(maxGuests) + ' guests')).trim(),
@@ -210,30 +210,30 @@
             rating: Math.min(Math.max(Number(raw.rating || 0), 0), 5),
             reviews: Math.max(0, Math.round(Number(raw.reviews || 0))),
             price: Math.max(1, Math.round(Number(raw.price || 0))),
-            priceType: String(raw.priceType || 'Per person').trim(),
-            reservationType: String(raw.reservationType || 'Instant booking').trim(),
+            priceType: String(raw.priceType || raw.price_type || 'Per person').trim(),
+            reservationType: String(raw.reservationType || raw.reservation_type || 'Instant booking').trim(),
             status: String(raw.status || 'Draft').trim(),
             provider: String(raw.provider || raw.guide || defaultProvider).trim() || defaultProvider,
             languages: String(raw.languages || defaultLanguages).trim() || defaultLanguages,
-            meetingPoint: String(raw.meetingPoint || 'Main tourist pickup point').trim() || 'Main tourist pickup point',
-            freeCancellation: parseBool(raw.freeCancellation, true),
+            meetingPoint: String(raw.meetingPoint || raw.meeting_point || 'Main tourist pickup point').trim() || 'Main tourist pickup point',
+            freeCancellation: parseBool(raw.freeCancellation != null ? raw.freeCancellation : raw.free_cancellation, true),
             cancellationText: String(raw.cancellationText || 'Cancel up to 24 hours in advance for a full refund').trim(),
-            reserveNowPayLater: parseBool(raw.reserveNowPayLater, true),
+            reserveNowPayLater: parseBool(raw.reserveNowPayLater != null ? raw.reserveNowPayLater : raw.reserve_now_pay_later, true),
             includes: includes,
             excludes: String(raw.excludes || '').trim(),
             requirements: String(raw.requirements || '').trim(),
-            safetyInfo: String(raw.safetyInfo || '').trim(),
+            safetyInfo: String(raw.safetyInfo || raw.safety_info || '').trim(),
             guidePhoto: String(raw.guidePhoto || profile.avatar || '../images/manila.jpg').trim() || '../images/manila.jpg',
             guideVerified: parseBool(raw.guideVerified, false),
             guideExperienceYears: Math.max(0, Number(raw.guideExperienceYears || 1)),
             guideContact: String(raw.guideContact || '').trim(),
             guideSocial: String(raw.guideSocial || '').trim(),
             tags: cleanTags,
-            weatherSuitability: String(raw.weatherSuitability || '').trim(),
-            bestSeason: String(raw.bestSeason || '').trim(),
-            childFriendly: parseBool(raw.childFriendly, false),
-            petFriendly: parseBool(raw.petFriendly, false),
-            description: String(raw.description || '').trim(),
+            weatherSuitability: String(raw.weatherSuitability || raw.weather_suitability || '').trim(),
+            bestSeason: String(raw.bestSeason || raw.best_season || '').trim(),
+            childFriendly: parseBool(raw.childFriendly != null ? raw.childFriendly : raw.child_friendly, false),
+            petFriendly: parseBool(raw.petFriendly != null ? raw.petFriendly : raw.pet_friendly, false),
+            description: String(raw.description || raw.short_description || '').trim(),
             image: finalGallery[0],
             coverImage: finalGallery[0],
             gallery: finalGallery
@@ -1778,8 +1778,7 @@
                     '<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-3">',
                     '<strong>', formatPeso(tour.price), '</strong>',
                     '<div class="d-flex gap-2">',
-                    '<a class="btn-soft" href="../tour-preview.html?tour=', encodeURIComponent(tour.id), '" target="_blank" rel="noopener">Preview</a>',
-                    '<button class="btn-soft" type="button" data-toggle-publish="', escapeHtml(tour.id), '">', tour.status === 'Published' ? 'Unpublish' : 'Publish', '</button>',
+                    '<a class="btn-soft" href="/tour-preview?tour=', encodeURIComponent(tour.id), '&from=guide">Preview</a>',
                     '<button class="btn-soft" type="button" data-edit-tour="', escapeHtml(tour.id), '">Edit</button>',
                     '<button class="btn-danger" type="button" data-delete-tour="', escapeHtml(tour.id), '">Delete</button>',
                     '</div>',
@@ -1960,22 +1959,6 @@
                     });
                     applyPayloadToForm(tour, true);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-                    return;
-                }
-
-                const publishBtn = event.target.closest('[data-toggle-publish]');
-                if (publishBtn) {
-                    const id = publishBtn.dataset.togglePublish;
-                    const tours = getGuideTours().map(function (tour) {
-                        if (tour.id !== id) {
-                            return tour;
-                        }
-                        const nextStatus = tour.status === 'Published' ? 'Paused' : 'Published';
-                        return Object.assign({}, tour, { status: nextStatus });
-                    });
-                    setGuideTours(tours);
-                    render();
-                    showToast('Listing status updated.', 'success');
                     return;
                 }
 

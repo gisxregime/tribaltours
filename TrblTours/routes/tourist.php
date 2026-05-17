@@ -22,6 +22,11 @@ Route::middleware(['auth', 'verified', 'role:tourist'])->prefix('tourist')->as('
 
     Route::get('bookings/mine', [BookingController::class, 'mine'])->name('bookings.mine');
     Route::post('bookings/check-availability', [BookingController::class, 'checkAvailability'])->name('bookings.check-availability');
+    Route::post('payment/success', [BookingController::class, 'paymentSuccess'])->name('payment.success');
+    Route::post('booking/set-date', [BookingController::class, 'setDate'])->name('bookings.set-date');
+    Route::patch('bookings/{booking}/set-date', [BookingController::class, 'setDate'])->name('bookings.set-date.booking');
+    Route::patch('bookings/{booking}/accept', [BookingController::class, 'accept'])->name('bookings.accept');
+    Route::patch('bookings/{booking}/decline', [BookingController::class, 'decline'])->name('bookings.decline');
     Route::patch('bookings/{booking}/transition', [BookingController::class, 'transition'])->name('bookings.transition');
     Route::post('bookings/{booking}/review', [BookingController::class, 'storeReview'])->name('bookings.review');
 

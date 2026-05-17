@@ -554,8 +554,8 @@
                 excludes: String(item.excludes || ''),
                 requirements: String(item.requirements || ''),
                 safetyInfo: String(item.safetyInfo || ''),
-                image: normalizeTourAssetPath(item.image || gallery[0] || 'images/pangasinan.jpg'),
-                coverImage: normalizeTourAssetPath(item.coverImage || item.image || gallery[0] || 'images/pangasinan.jpg'),
+                image: normalizeTourAssetPath(gallery[0] || item.image || item.coverImage || 'images/pangasinan.jpg'),
+                coverImage: normalizeTourAssetPath(gallery[0] || item.coverImage || item.image || 'images/pangasinan.jpg'),
                 guideAvatar: normalizeTourAssetPath(item.guideAvatar || 'images/manila.jpg'),
                 guidePhoto: normalizeTourAssetPath(item.guidePhoto || item.guideAvatar || 'images/manila.jpg'),
                 guideVerified: Boolean(item.guideVerified),
@@ -1218,7 +1218,7 @@
         }
 
         function syncToursFromApi() {
-            return apiRequest('/tourist/tours/feed').then(function (data) {
+            return apiRequest('/catalog/tours/feed').then(function (data) {
                 const tours = data && Array.isArray(data.tours) ? data.tours : [];
                 dbTours = tours.map(function (tour) {
                     return Object.assign({}, tour, {

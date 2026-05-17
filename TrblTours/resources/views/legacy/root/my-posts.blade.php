@@ -221,7 +221,107 @@
                         </div>
                     </article>
                 </section>
+
+                <button class="btn-gold floating-create" type="button" data-bs-toggle="modal" data-bs-target="#createRequestModal" aria-label="Create Tour Request">
+                    <i class="fa-solid fa-plus me-2"></i>Create Tour Request
+                </button>
             </main>
+        </div>
+    </div>
+
+    <div class="modal fade" id="createRequestModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="h5 mb-0">Create Tour Request</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="createRequestForm" class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="field-label" for="reqTitle">Title</label>
+                            <input id="reqTitle" name="title" class="input-soft" required type="text" placeholder="Tagum eco-tour with family">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="field-label" for="reqLocation">Destination</label>
+                            <input id="reqLocation" name="location" class="input-soft" required type="text" placeholder="Tagum City">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqDuration">Duration</label>
+                            <input id="reqDuration" name="duration" class="form-control" type="range" min="1" max="14" value="3">
+                            <small id="reqDurationValue" class="text-muted">3 days</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqRegion">Region</label>
+                            <select id="reqRegion" class="select-soft" name="region" required>
+                                <option value="Davao del Norte" selected>Davao del Norte</option>
+                                <option value="National Capital Region (NCR)">National Capital Region (NCR)</option>
+                                <option value="Cordillera Administrative Region (CAR)">Cordillera Administrative Region (CAR)</option>
+                                <option value="Ilocos Region">Ilocos Region</option>
+                                <option value="Cagayan Valley">Cagayan Valley</option>
+                                <option value="Central Luzon">Central Luzon</option>
+                                <option value="CALABARZON">CALABARZON</option>
+                                <option value="MIMAROPA">MIMAROPA</option>
+                                <option value="Bicol Region">Bicol Region</option>
+                                <option value="Western Visayas">Western Visayas</option>
+                                <option value="Central Visayas">Central Visayas</option>
+                                <option value="Eastern Visayas">Eastern Visayas</option>
+                                <option value="Zamboanga Peninsula">Zamboanga Peninsula</option>
+                                <option value="Northern Mindanao">Northern Mindanao</option>
+                                <option value="Davao Region">Davao Region</option>
+                                <option value="SOCCSKSARGEN">SOCCSKSARGEN</option>
+                                <option value="Caraga">Caraga</option>
+                                <option value="Bangsamoro">Bangsamoro</option>
+                                <option value="Negros Island Region">Negros Island Region</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label" for="reqBudget">Budget</label>
+                            <input id="reqBudget" name="budget" class="input-soft" type="number" min="100" value="3000">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label">Adults</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn-ghost" type="button" data-counter-btn="adultInput" data-counter-type="minus"><i class="fa-solid fa-minus"></i></button>
+                                <input id="adultInput" name="adults" class="input-soft" type="number" value="1" min="1">
+                                <button class="btn-ghost" type="button" data-counter-btn="adultInput" data-counter-type="plus"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            <small class="text-muted">Adults count: <span id="adultsCount">1</span></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="field-label">Children</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn-ghost" type="button" data-counter-btn="childInput" data-counter-type="minus"><i class="fa-solid fa-minus"></i></button>
+                                <input id="childInput" name="children" class="input-soft" type="number" value="0" min="0">
+                                <button class="btn-ghost" type="button" data-counter-btn="childInput" data-counter-type="plus"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            <small class="text-muted">Children count: <span id="childrenCount">0</span></small>
+                        </div>
+                        <div class="col-12">
+                            <label class="field-label">Interests</label>
+                            <div id="interestOptions" class="d-flex gap-3 flex-wrap">
+                                <label><input type="checkbox" name="interests[]" value="Nature"> Nature</label>
+                                <label><input type="checkbox" name="interests[]" value="Culture"> Culture</label>
+                                <label><input type="checkbox" name="interests[]" value="Beach"> Beach</label>
+                                <label><input type="checkbox" name="interests[]" value="Adventure"> Adventure</label>
+                                <label><input type="checkbox" name="interests[]" value="Food"> Food</label>
+                            </div>
+                            <div class="d-flex gap-2 mt-2">
+                                <input id="customInterestInput" class="input-soft" type="text" placeholder="Enter custom interest">
+                                <button id="addInterestBtn" class="btn-soft" type="button">+ Add another</button>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="field-label" for="reqDetails">Trip Details for Guide</label>
+                            <textarea id="reqDetails" name="details" class="input-soft" rows="3" placeholder="Share your planned activities, preferences, pickup point, schedule, and any special needs."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer mt-3 px-0 pb-0">
+                        <button class="btn-ghost" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn-gold" type="submit">Create Request</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

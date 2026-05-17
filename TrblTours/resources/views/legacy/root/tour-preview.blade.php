@@ -14,19 +14,31 @@
     <link rel="stylesheet" href="{{ asset('assets/styles.css') }}?v={{ filemtime(public_path('assets/styles.css')) }}">
 </head>
 
-<body class="account-page" data-page="explore" data-view="tour-preview" data-require-auth="true">
+@php
+    $isGuidePreview = strtolower((string) request()->query('from', '')) === 'guide';
+@endphp
+
+<body class="account-page" data-page="{{ $isGuidePreview ? 'guide-tour-preview' : 'explore' }}" data-view="tour-preview" data-require-auth="true">
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <div class="app-root">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div>
                     <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
-                    <small class="text-muted">Tourist Workspace</small>
+                    <small class="text-muted">{{ $isGuidePreview ? 'Tour Guide Workspace' : 'Tourist Workspace' }}</small>
                 </div>
             </div>
             <nav class="sidebar-nav">
                 <p class="side-label">Navigation</p>
-                <a class="side-link" href="{{ route('explore') }}" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
+                @if ($isGuidePreview)
+                    <a class="side-link" href="{{ route('guide.dashboard') }}" data-page="guide-dashboard"><i class="fa-solid fa-chart-line"></i>Dashboard</a>
+                    <a class="side-link" href="{{ route('guide.request-feed.page') }}" data-page="guide-request-feed"><i class="fa-solid fa-clipboard-list"></i>Request Post Feed</a>
+                    <a class="side-link" href="{{ route('guide.booking-requests.index') }}" data-page="guide-booking-requests"><i class="fa-solid fa-inbox"></i>Booking Requests</a>
+                    <a class="side-link" href="{{ route('guide.tours.index') }}" data-page="guide-tours"><i class="fa-solid fa-map-location-dot"></i>My Tours</a>
+                    <a class="side-link" href="{{ route('guide.messages') }}" data-page="guide-messages"><i class="fa-solid fa-comments"></i>Messages</a>
+                @else
+                    <a class="side-link" href="{{ route('explore') }}" data-page="explore"><i class="fa-solid fa-compass"></i>Explore Tours</a>
+                @endif
                 <div class="dropdown">
                     <a class="side-link has-notif" href="#" role="button" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
                         <i class="fa-solid fa-bell notif-bell"></i>Notifications
@@ -39,13 +51,15 @@
                         <div id="notificationList" class="d-grid gap-1 pt-2"></div>
                     </div>
                 </div>
-                <a class="side-link" href="{{ route('my-posts') }}" data-page="my-posts"><i class="fa-solid fa-clipboard-list"></i>My Posts</a>
-                <a class="side-link" href="{{ route('my-bookings') }}" data-page="my-bookings"><i class="fa-solid fa-ticket"></i>My Bookings</a>
-                <a class="side-link" href="{{ route('likes') }}" data-page="likes"><i class="fa-solid fa-heart"></i>Likes</a>
-                <a class="side-link" href="{{ route('messages') }}" data-page="messages"><i class="fa-solid fa-comments"></i>Messages</a>
-                <p class="side-label">Account</p>
-                <a class="side-link" href="{{ route('profile') }}" data-page="profile"><i class="fa-solid fa-user"></i>Profile</a>
-                <a class="side-link" href="{{ route('settings') }}" data-page="settings"><i class="fa-solid fa-gear"></i>Settings</a>
+                @if ($isGuidePreview)
+                    <a class="side-link" href="{{ route('guide.profile') }}" data-page="guide-profile"><i class="fa-solid fa-user"></i>Guide Profile</a>
+                @else
+                    <a class="side-link" href="{{ route('my-posts') }}" data-page="my-posts"><i class="fa-solid fa-clipboard-list"></i>My Posts</a>
+                    <a class="side-link" href="{{ route('my-bookings') }}" data-page="my-bookings"><i class="fa-solid fa-ticket"></i>My Bookings</a>
+                    <a class="side-link" href="{{ route('likes') }}" data-page="likes"><i class="fa-solid fa-heart"></i>Likes</a>
+                    <a class="side-link" href="{{ route('messages') }}" data-page="messages"><i class="fa-solid fa-comments"></i>Messages</a>
+                @endif
+              
             </nav>
             <div class="sidebar-footer"><button id="logoutBtn" class="logout-btn"><i class="fa-solid fa-right-from-bracket me-2"></i>Logout</button></div>
         </aside>
@@ -59,15 +73,28 @@
                         </button>
                         <ul class="dropdown-menu hamburger-dropdown">
                             <li><h6 class="dropdown-header">Navigation</h6></li>
-                            <li><a class="dropdown-item" href="{{ route('explore') }}"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
-                            <li><a class="dropdown-item" href="{{ route('my-posts') }}"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
-                            <li><a class="dropdown-item" href="{{ route('my-bookings') }}"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
-                            <li><a class="dropdown-item" href="{{ route('likes') }}"><i class="fa-solid fa-heart"></i>Likes</a></li>
-                            <li><a class="dropdown-item" href="{{ route('messages') }}"><i class="fa-solid fa-comments"></i>Messages</a></li>
+                            @if ($isGuidePreview)
+                                <li><a class="dropdown-item" href="{{ route('guide.dashboard') }}"><i class="fa-solid fa-chart-line"></i>Dashboard</a></li>
+                                <li><a class="dropdown-item" href="{{ route('guide.request-feed.page') }}"><i class="fa-solid fa-clipboard-list"></i>Request Post Feed</a></li>
+                                <li><a class="dropdown-item" href="{{ route('guide.booking-requests.index') }}"><i class="fa-solid fa-inbox"></i>Booking Requests</a></li>
+                                <li><a class="dropdown-item" href="{{ route('guide.tours.index') }}"><i class="fa-solid fa-map-location-dot"></i>My Tours</a></li>
+                                <li><a class="dropdown-item" href="{{ route('guide.messages') }}"><i class="fa-solid fa-comments"></i>Messages</a></li>
+                            @else
+                                <li><a class="dropdown-item" href="{{ route('explore') }}"><i class="fa-solid fa-compass"></i>Explore Tours</a></li>
+                                <li><a class="dropdown-item" href="{{ route('my-posts') }}"><i class="fa-solid fa-clipboard-list"></i>My Posts</a></li>
+                                <li><a class="dropdown-item" href="{{ route('my-bookings') }}"><i class="fa-solid fa-ticket"></i>My Bookings</a></li>
+                                <li><a class="dropdown-item" href="{{ route('likes') }}"><i class="fa-solid fa-heart"></i>Likes</a></li>
+                                <li><a class="dropdown-item" href="{{ route('messages') }}"><i class="fa-solid fa-comments"></i>Messages</a></li>
+                            @endif
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Account</h6></li>
-                            <li><a class="dropdown-item" href="{{ route('profile') }}"><i class="fa-solid fa-user"></i>Profile</a></li>
-                            <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
+                            @if ($isGuidePreview)
+                                <li><a class="dropdown-item" href="{{ route('guide.profile') }}"><i class="fa-solid fa-user"></i>Guide Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ route('guide.settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
+                            @else
+                                <li><a class="dropdown-item" href="{{ route('profile') }}"><i class="fa-solid fa-user"></i>Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ route('settings') }}"><i class="fa-solid fa-gear"></i>Settings</a></li>
+                            @endif
                         </ul>
                     </div>
                     <a href="{{ route('home') }}" class="brand-asimovian brand-top">Tribaltours</a>
@@ -77,6 +104,20 @@
             <main class="content-wrap account-wrap">
                 <div class="tour-preview-layout">
                     <section>
+                        @if ($isGuidePreview)
+                            <div class="mb-3 tour-preview-back-nav">
+                                <a href="{{ route('guide.tours.index') }}" class="btn btn-outline-secondary btn-sm tour-preview-back-link" aria-label="Back to My Tours">
+                                    <i class="fa-solid fa-arrow-left me-1"></i>Back to My Tours
+                                </a>
+                            </div>
+                        @else
+                            <div class="mb-3 tour-preview-back-nav">
+                                <a href="{{ route('explore') }}" class="btn btn-outline-secondary btn-sm tour-preview-back-link" aria-label="Back to Explore Tours">
+                                    <i class="fa-solid fa-arrow-left me-1"></i>Back to Explore Tours
+                                </a>
+                            </div>
+                        @endif
+
                         <h1 class="preview-title" data-tour-title>Tour Title</h1>
                         <div class="preview-meta">
                             <span><i class="fa-solid fa-star text-warning me-1"></i><span data-tour-rating>0.0</span></span>

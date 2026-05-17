@@ -78,10 +78,11 @@ class TourListingFeedController extends Controller
             $tourListing->province,
         ]);
 
-        $coverImage = (string) ($tourListing->cover_image_path ?: 'images/pangasinan.jpg');
         $gallery = array_values(array_filter(array_map(function ($path) {
-            return trim((string) $path);
+            return $this->resolveAssetPath((string) $path, '/images/pangasinan.jpg');
         }, is_array($tourListing->gallery_paths) ? $tourListing->gallery_paths : [])));
+
+        $coverImage = $gallery[0] ?? $this->resolveAssetPath((string) ($tourListing->cover_image_path ?: 'images/pangasinan.jpg'), '/images/pangasinan.jpg');
 
         if (!$gallery) {
             $gallery = [$coverImage];
@@ -352,5 +353,27 @@ class TourListingFeedController extends Controller
         }
 
         return '/' . ltrim($raw, '/');
+    }
+
+    private function resolveAssetPath(?string $path, string $fallback): string
+    {
+        $value = trim((string) $path);
+        if ($value === '') {
+            return $fallback;
+        }
+
+        if (str_starts_with($value, 'data:')) {
+            return $value;
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1 || str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        if (str_starts_with($value, 'images/') || str_starts_with($value, 'storage/')) {
+            return '/' . $value;
+        }
+
+        return '/storage/' . ltrim($value, '/');
     }
 }

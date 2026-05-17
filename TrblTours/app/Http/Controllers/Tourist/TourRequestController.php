@@ -17,6 +17,7 @@ use App\Support\DomainNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
@@ -374,34 +375,55 @@ class TourRequestController extends Controller
         }
 
         $amount = (float) ($payload['offer_amount'] ?? $tourRequest->budget_max ?? $tourRequest->budget_min ?? 0);
+        $requestedScheduleAt = $this->resolveTourRequestSchedule($tourRequest);
+        $bookingCreateData = [
+            'booking_reference' => 'TRBL-' . strtoupper(Str::random(10)),
+            'guide_id' => $guide->id,
+            'tour_listing_id' => null,
+            'guest_count' => $guestCount,
+            'price_snapshot' => $amount,
+            'total_amount' => $amount,
+            'payment_status' => 'unpaid',
+            'status' => 'confirmed',
+            'reservation_type' => 'manual',
+            'notes' => 'Created from guide selection in tourist request workflow.',
+            'approved_at' => now(),
+        ];
+
+        if (Schema::hasColumn('bookings', 'booking_status')) {
+            $bookingCreateData['booking_status'] = 'payment_pending';
+        }
+        if (Schema::hasColumn('bookings', 'tour_start_date')) {
+            $bookingCreateData['tour_start_date'] = $requestedScheduleAt;
+        }
+        if (Schema::hasColumn('bookings', 'confirmed_booking_date')) {
+            $bookingCreateData['confirmed_booking_date'] = $requestedScheduleAt;
+        }
+
         $booking = Booking::query()->firstOrCreate(
             [
                 'tour_request_id' => $tourRequest->id,
                 'tourist_id' => $request->user()->id,
             ],
-            [
-                'booking_reference' => 'TRBL-' . strtoupper(Str::random(10)),
-                'guide_id' => $guide->id,
-                'tour_listing_id' => null,
-                'guest_count' => $guestCount,
-                'price_snapshot' => $amount,
-                'total_amount' => $amount,
-                'payment_status' => 'unpaid',
-                'status' => 'confirmed',
-                'reservation_type' => 'manual',
-                'notes' => 'Created from guide selection in tourist request workflow.',
-                'approved_at' => now(),
-            ]
+            $bookingCreateData
         );
 
         if ($booking->guide_id !== $guide->id || $booking->status !== 'confirmed') {
-            $booking->update([
+            $bookingUpdateData = [
                 'guide_id' => $guide->id,
                 'status' => 'confirmed',
                 'approved_at' => $booking->approved_at ?: now(),
                 'price_snapshot' => $amount,
                 'total_amount' => $amount,
-            ]);
+            ];
+            if (Schema::hasColumn('bookings', 'tour_start_date')) {
+                $bookingUpdateData['tour_start_date'] = $booking->tour_start_date ?: $requestedScheduleAt;
+            }
+            if (Schema::hasColumn('bookings', 'confirmed_booking_date')) {
+                $bookingUpdateData['confirmed_booking_date'] = $booking->confirmed_booking_date ?: $requestedScheduleAt;
+            }
+
+            $booking->update($bookingUpdateData);
         }
 
         $intro = trim((string) ($payload['intro_message'] ?? 'Guide selected. You can now finalize the itinerary and schedule.'));
@@ -446,6 +468,33 @@ class TourRequestController extends Controller
                 . '?conversation=' . urlencode((string) $conversation->id)
                 . '&request=' . urlencode((string) $tourRequest->id),
         ]);
+    }
+
+    private function resolveTourRequestSchedule(TourRequest $tourRequest): ?Carbon
+    {
+        $metadata = is_array($tourRequest->metadata) ? $tourRequest->metadata : [];
+        $candidates = [
+            $metadata['tour_start_date'] ?? null,
+            $metadata['tourStartDate'] ?? null,
+            $metadata['start_date'] ?? null,
+            $metadata['requested_date'] ?? null,
+            $metadata['travel_date'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            $raw = trim((string) ($value ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+
+            try {
+                return Carbon::parse($raw);
+            } catch (\Throwable $_error) {
+                // Try next candidate.
+            }
+        }
+
+        return null;
     }
 
     public function unselectGuide(Request $request, TourRequest $tourRequest): JsonResponse

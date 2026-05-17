@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Tourist;
 
+use App\Events\BookingStatusUpdated;
+use App\Events\TouristProfileUpdated;
 use App\Events\TourRequestUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\Booking;
 use App\Models\TourRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -47,6 +50,7 @@ class AccountController extends Controller
     public function updateProfile(Request $request): JsonResponse
     {
         $user = $request->user();
+        $previousName = trim((string) ($user->name ?? ''));
 
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -85,11 +89,15 @@ class AccountController extends Controller
             'bio' => $payload['bio'] ?? null,
         ]);
 
+        $identityChanged = $avatarChanged || $previousName !== trim((string) ($payload['name'] ?? ''));
+
         $user->save();
 
         if ($avatarChanged) {
             $this->deleteStoredAvatar($oldAvatarPath);
+        }
 
+        if ($identityChanged) {
             TourRequest::query()
                 ->where('tourist_id', $user->id)
                 ->with(['tourist', 'selectedGuide'])
@@ -99,7 +107,19 @@ class AccountController extends Controller
                 ->each(function (TourRequest $tourRequest): void {
                     event(new TourRequestUpdated($tourRequest));
                 });
+
+            Booking::query()
+                ->where('tourist_id', $user->id)
+                ->with(['tourist', 'guide', 'tourListing'])
+                ->latest('id')
+                ->limit(200)
+                ->get()
+                ->each(function (Booking $booking): void {
+                    event(new BookingStatusUpdated($booking));
+                });
         }
+
+        event(new TouristProfileUpdated($user->fresh()));
 
         return response()->json([
             'ok' => true,

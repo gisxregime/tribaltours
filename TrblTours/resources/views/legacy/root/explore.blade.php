@@ -116,10 +116,19 @@
                         <option value="price-asc">Price Low-High</option>
                     </select>
 
-                    <button class="region-chip active" data-region-chip="all" type="button">All Regions</button>
-                    <button class="region-chip" data-region-chip="manila" type="button">Manila</button>
-                    <button class="region-chip" data-region-chip="cebu" type="button">Cebu</button>
-                    <button class="region-chip" data-region-chip="davao" type="button">Davao</button>
+                    <button class="category-chip active" data-category-chip="all" type="button">All Categories</button>
+                    <button class="category-chip" data-category-chip="island-hopping" type="button">Island Hopping</button>
+                    <button class="category-chip" data-category-chip="diving" type="button">Diving</button>
+                    <button class="category-chip" data-category-chip="hiking" type="button">Hiking</button>
+                    <button class="category-chip" data-category-chip="cultural" type="button">Cultural</button>
+                    <button class="category-chip" data-category-chip="food-tour" type="button">Food Tour</button>
+                    <button class="category-chip" data-category-chip="city-tour" type="button">City Tour</button>
+                    <button class="category-chip" data-category-chip="adventure" type="button">Adventure</button>
+                    <button class="category-chip" data-category-chip="historical" type="button">Historical</button>
+                    <button class="category-chip" data-category-chip="beach" type="button">Beach</button>
+                    <button class="category-chip" data-category-chip="nature" type="button">Nature</button>
+                    <button class="category-chip" data-category-chip="wellness" type="button">Wellness</button>
+                    <button class="category-chip" data-category-chip="photography" type="button">Photography</button>
                 </section>
 
                 <section class="mt-4">
@@ -136,7 +145,7 @@
                 <section class="feed-layout mt-3">
                     <div>
                         <div class="feed-grid" id="feedCards">
-                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="2500" data-latest="20260508" data-search="bohol chocolate hills tarsier nature wildlife scenic jethro">
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-category="nature" data-price="2500" data-latest="20260508" data-search="bohol chocolate hills tarsier nature wildlife scenic jethro">
                                 <div class="relative">
                                     <img src="{{ asset('images/pangasinan.jpg') }}" alt="Bohol Hills" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
@@ -163,7 +172,7 @@
                                 </div>
                             </article>
 
-                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="3800" data-latest="20260507" data-search="el nido island hopping hidden lagoons snorkeling beach joshua">
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-category="island-hopping" data-price="3800" data-latest="20260507" data-search="el nido island hopping hidden lagoons snorkeling beach joshua">
                                 <div class="relative">
                                     <img src="{{ asset('images/puertoprincessa.jpg') }}" alt="El Nido" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
@@ -190,7 +199,7 @@
                                 </div>
                             </article>
 
-                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-price="4500" data-latest="20260506" data-search="coron shipwreck diving kayangan lake snorkeling joshua">
+                            <article class="tour-card feed-item" data-type="tour" data-region="cebu" data-category="diving" data-price="4500" data-latest="20260506" data-search="coron shipwreck diving kayangan lake snorkeling joshua">
                                 <div class="relative">
                                     <img src="{{ asset('images/manila.png') }}" alt="Coron" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
@@ -217,7 +226,7 @@
                                 </div>
                             </article>
 
-                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-price="8500" data-latest="20260505" data-search="mount apo summit trek davao camping lance challenging">
+                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-category="hiking" data-price="8500" data-latest="20260505" data-search="mount apo summit trek davao camping lance challenging">
                                 <div class="relative">
                                     <img src="{{ asset('images/davao.jpg') }}" alt="Davao" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Trekking</div>
@@ -244,7 +253,7 @@
                                 </div>
                             </article>
 
-                            <article class="tour-card feed-item" data-type="tour" data-region="manila" data-price="6500" data-latest="20260504" data-search="batanes windmill trail ivatan culture scenic lloyd photography">
+                            <article class="tour-card feed-item" data-type="tour" data-region="manila" data-category="cultural" data-price="6500" data-latest="20260504" data-search="batanes windmill trail ivatan culture scenic lloyd photography">
                                 <div class="relative">
                                     <img src="{{ asset('images/carousel2.jpg') }}" alt="Batanes" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#9A742A]">Featured</div>
@@ -271,7 +280,7 @@
                                 </div>
                             </article>
 
-                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-price="2200" data-latest="20260503" data-search="siargao surf lessons cloud 9 waves beach marklurence">
+                            <article class="tour-card feed-item" data-type="tour" data-region="davao" data-category="beach" data-price="2200" data-latest="20260503" data-search="siargao surf lessons cloud 9 waves beach marklurence">
                                 <div class="relative">
                                     <img src="{{ asset('images/carousel3.jpg') }}" alt="Siargao surf" class="h-48 w-full object-cover">
                                     <div class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-[#556B2F]">Water Sports</div>
@@ -414,7 +423,7 @@
             cluster: @json(env('PUSHER_APP_CLUSTER', 'ap1'))
         };
     </script>
-    <script src="{{ asset('assets/app.js') }}"></script>
+    <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}"></script>
 </body>
 
 </html>

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Availability;
 use App\Models\Booking;
 use App\Models\Review;
+use App\Models\TourRequest;
 use App\Models\TourListing;
 use App\Support\DomainNotification;
 use Illuminate\Support\Carbon;
@@ -14,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -21,6 +23,8 @@ class BookingController extends Controller
 {
     public function index(Request $request): View|JsonResponse
     {
+        $this->expirePendingBookingsAfterCancellationWindow((int) $request->user()->id);
+
         $query = $request->user()->bookingsAsTourist()->with(['tourListing', 'tourRequest', 'guide.guideProfile', 'reviews'])->latest();
 
         if ($request->expectsJson() || $request->wantsJson()) {
@@ -41,6 +45,8 @@ class BookingController extends Controller
 
     public function mine(Request $request): JsonResponse
     {
+        $this->expirePendingBookingsAfterCancellationWindow((int) $request->user()->id);
+
         $bookings = $request->user()->bookingsAsTourist()
             ->with(['tourListing', 'tourRequest', 'guide.guideProfile', 'reviews'])
             ->latest()
@@ -203,7 +209,7 @@ class BookingController extends Controller
         $total = $listing->price_type === 'per_group' ? $unitPrice : $unitPrice * $guestCount;
         $paymentStatus = (string) ($payload['payment_status'] ?? 'unpaid');
 
-        $booking = Booking::create([
+        $bookingCreateData = [
             'booking_reference' => 'TRBL-' . strtoupper(Str::random(10)),
             'client_token' => $clientToken !== '' ? $clientToken : null,
             'tourist_id' => $request->user()->id,
@@ -225,7 +231,28 @@ class BookingController extends Controller
             'traveler_phone' => isset($payload['traveler_phone']) ? trim((string) $payload['traveler_phone']) : null,
             'traveler_emergency_contact' => isset($payload['traveler_emergency_contact']) ? trim((string) $payload['traveler_emergency_contact']) : null,
             'paid_at' => $paymentStatus === 'paid' ? now() : null,
-        ]);
+        ];
+
+        if (Schema::hasColumn('bookings', 'payment_received_at')) {
+            $bookingCreateData['payment_received_at'] = $paymentStatus === 'paid' ? now() : null;
+        }
+        if (Schema::hasColumn('bookings', 'tour_start_date')) {
+            $bookingCreateData['tour_start_date'] = isset($payload['booked_for_date'])
+                ? Carbon::parse((string) $payload['booked_for_date'] . ' ' . (string) ($payload['booked_for_time'] ?? '23:59'))
+                : null;
+        }
+        if (Schema::hasColumn('bookings', 'confirmed_booking_date')) {
+            $bookingCreateData['confirmed_booking_date'] = isset($payload['booked_for_date'])
+                ? Carbon::parse((string) $payload['booked_for_date'] . ' ' . (string) ($payload['booked_for_time'] ?? '23:59'))
+                : null;
+        }
+        if (Schema::hasColumn('bookings', 'booking_status')) {
+            $bookingCreateData['booking_status'] = $paymentStatus === 'paid'
+                ? (isset($payload['booked_for_date']) ? 'date_confirmed' : 'date_pending')
+                : 'payment_pending';
+        }
+
+        $booking = Booking::create($bookingCreateData);
 
         $booking->loadMissing(['guide', 'tourListing']);
         DomainNotification::notifyUser(
@@ -356,7 +383,7 @@ class BookingController extends Controller
             if (!$this->canTouristMarkCompleted($booking)) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'You can only mark this booking completed once the scheduled booking date/time is reached.',
+                    'message' => 'You can only mark this booking completed after payment is paid and a confirmed booking date/time exists.',
                     'completionSecondsLeft' => $this->completionSecondsLeft($booking),
                 ], 422);
             }
@@ -364,6 +391,8 @@ class BookingController extends Controller
             $booking->status = 'completed';
             $booking->completed_at = Carbon::now();
         }
+
+        $this->syncLifecycleFields($booking);
 
         $booking->save();
 
@@ -383,6 +412,250 @@ class BookingController extends Controller
         return response()->json([
             'ok' => true,
             'booking' => $this->presentBooking($booking->fresh(['guide', 'tourListing'])),
+        ]);
+    }
+
+    public function complete(Request $request, Booking $booking): JsonResponse
+    {
+        $request->merge(['action' => 'mark_completed']);
+
+        return $this->transition($request, $booking);
+    }
+
+    public function accept(Request $request, Booking $booking): JsonResponse
+    {
+        abort_unless($booking->tourist_id === Auth::id(), 403);
+
+        if (!$booking->canAccept()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'This booking cannot be accepted in its current state.',
+            ], 422);
+        }
+
+        $booking->booking_status = 'accepted';
+        $booking->approved_at = $booking->approved_at ?: now();
+        $booking->save();
+
+        DomainNotification::notifyUser(
+            $booking->guide,
+            'booking.accepted',
+            trim((string) $request->user()->name) . ' accepted the booking.',
+            ['bookingId' => (string) $booking->id]
+        );
+
+        event(new BookingStatusUpdated($booking->fresh(['guide', 'tourListing'])));
+
+        return response()->json([
+            'ok' => true,
+            'booking' => $this->presentBooking($booking->fresh(['guide', 'tourListing'])),
+        ]);
+    }
+
+    public function decline(Request $request, Booking $booking): JsonResponse
+    {
+        abort_unless($booking->tourist_id === Auth::id(), 403);
+
+        if (!$booking->canDecline()) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'This booking cannot be declined in its current state.',
+            ], 422);
+        }
+
+        $booking->booking_status = 'declined';
+        $booking->declined_at = $booking->declined_at ?: now();
+        $booking->save();
+
+        DomainNotification::notifyUser(
+            $booking->guide,
+            'booking.declined',
+            trim((string) $request->user()->name) . ' declined the booking.',
+            ['bookingId' => (string) $booking->id]
+        );
+
+        event(new BookingStatusUpdated($booking->fresh(['guide', 'tourListing'])));
+
+        return response()->json([
+            'ok' => true,
+            'booking' => $this->presentBooking($booking->fresh(['guide', 'tourListing'])),
+        ]);
+    }
+
+    public function paymentSuccess(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'booking_id' => ['required_without:tour_request_id', 'nullable', 'exists:bookings,id'],
+            'tour_request_id' => ['required_without:booking_id', 'nullable', 'exists:tour_requests,id'],
+            'payment_method' => ['nullable', 'string', 'max:120'],
+            'payment_reference' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $query = Booking::query()->where('tourist_id', (int) $request->user()->id);
+        if (!empty($payload['booking_id'])) {
+            $query->whereKey((int) $payload['booking_id']);
+        } else {
+            $query->where('tour_request_id', (int) $payload['tour_request_id']);
+        }
+
+        $booking = $query->latest('id')->firstOrFail();
+
+        $booking->payment_status = 'paid';
+        if (Schema::hasColumn('bookings', 'payment_received_at')) {
+            $booking->payment_received_at = now();
+        }
+        $booking->paid_at = $booking->paid_at ?: now();
+        if (array_key_exists('payment_method', $payload)) {
+            $booking->payment_method = trim((string) ($payload['payment_method'] ?? '')) ?: $booking->payment_method;
+        }
+        if (array_key_exists('payment_reference', $payload)) {
+            $booking->payment_reference = trim((string) ($payload['payment_reference'] ?? '')) ?: $booking->payment_reference;
+        }
+
+        $this->syncLifecycleFields($booking);
+        $booking->save();
+
+        event(new BookingStatusUpdated($booking->fresh(['guide', 'tourListing'])));
+
+        return response()->json([
+            'ok' => true,
+            'booking' => $this->presentBooking($booking->fresh(['guide', 'tourListing', 'tourRequest'])),
+        ]);
+    }
+
+    public function setDate(Request $request, ?Booking $booking = null): JsonResponse
+    {
+        $payload = $request->validate([
+            'booking_id' => ['nullable', 'exists:bookings,id'],
+            'tour_request_id' => ['nullable', 'exists:tour_requests,id'],
+            'tour_date' => ['required', 'date'],
+            'tour_time' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $target = $booking;
+        if (!$target) {
+            $query = Booking::query()->where('tourist_id', (int) $request->user()->id);
+            if (!empty($payload['booking_id'])) {
+                $query->whereKey((int) $payload['booking_id']);
+            } elseif (!empty($payload['tour_request_id'])) {
+                $query->where('tour_request_id', (int) $payload['tour_request_id']);
+            } else {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Booking identifier is required.',
+                ], 422);
+            }
+
+            $target = $query->latest('id')->first();
+            if (!$target && !empty($payload['tour_request_id'])) {
+                $tourRequest = TourRequest::query()
+                    ->whereKey((int) $payload['tour_request_id'])
+                    ->where('tourist_id', (int) $request->user()->id)
+                    ->first();
+
+                if (!$tourRequest) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'Tour request not found for this account.',
+                    ], 404);
+                }
+
+                $guideId = (int) ($tourRequest->selected_guide_id ?? 0);
+                if ($guideId <= 0) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'Please select a guide before setting booking date.',
+                    ], 422);
+                }
+
+                $guestCount = 1;
+                if ($tourRequest->travelers_label && preg_match('/(\d+)/', (string) $tourRequest->travelers_label, $matches) === 1) {
+                    $guestCount = max(1, (int) $matches[1]);
+                }
+
+                $amount = (float) ($tourRequest->budget_max ?? $tourRequest->budget_min ?? 0);
+                $createData = [
+                    'booking_reference' => 'TRBL-' . strtoupper(Str::random(10)),
+                    'tourist_id' => (int) $request->user()->id,
+                    'guide_id' => $guideId,
+                    'tour_request_id' => (int) $tourRequest->id,
+                    'tour_listing_id' => null,
+                    'guest_count' => $guestCount,
+                    'price_snapshot' => $amount,
+                    'total_amount' => $amount,
+                    'payment_status' => 'unpaid',
+                    'status' => 'pending',
+                    'booking_status' => 'pending',
+                    'reservation_type' => 'manual',
+                    'notes' => 'Created from tour request.',
+                ];
+
+                $target = Booking::query()->create($createData);
+            }
+
+            if (!$target) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'No booking found for this request yet.',
+                ], 404);
+            }
+        }
+
+        abort_unless((int) $target->tourist_id === (int) $request->user()->id, 403);
+
+        // Parse tour date
+        $tourDate = Carbon::parse((string) $payload['tour_date'])->toDateString();
+        $tourTime = trim((string) ($payload['tour_time'] ?? ''));
+
+        // Validate time format if provided
+        if ($tourTime !== '') {
+            try {
+                $timeObj = Carbon::parse($tourTime);
+                $tourTime = $timeObj->format('H:i');
+            } catch (\Throwable $_) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Invalid time format provided.',
+                ], 422);
+            }
+        } else {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Tour time is required.',
+            ], 422);
+        }
+
+        // Update booking with new schedule
+        $target->tour_date = $tourDate;
+        $target->tour_time = $tourTime;
+        $target->booked_for_date = $tourDate;
+        $target->booked_for_time = $tourTime;
+
+        // If in accepted state, move to schedule_confirmed
+        if ((string) $target->booking_status === 'accepted') {
+            $target->booking_status = 'schedule_confirmed';
+            $target->schedule_confirmed_at = $target->schedule_confirmed_at ?: now();
+        }
+
+        $this->syncLifecycleFields($target);
+        $target->save();
+
+        DomainNotification::notifyUser(
+            $target->guide,
+            'booking.schedule.confirmed',
+            trim((string) $request->user()->name) . ' confirmed the tour schedule.',
+            [
+                'bookingId' => (string) $target->id,
+                'tourDate' => $tourDate,
+                'tourTime' => $tourTime,
+            ]
+        );
+
+        event(new BookingStatusUpdated($target->fresh(['guide', 'tourListing'])));
+
+        return response()->json([
+            'ok' => true,
+            'booking' => $this->presentBooking($target->fresh(['guide', 'tourListing', 'tourRequest'])),
         ]);
     }
 
@@ -483,6 +756,8 @@ class BookingController extends Controller
             default => 'pending',
         };
 
+        $currentBookingStatus = (string) ($booking->booking_status ?? 'pending');
+        
         $requestMetadata = is_array($requestSource?->metadata) ? $requestSource->metadata : [];
         $requestImage = trim((string) ($requestMetadata['image'] ?? $requestMetadata['coverImage'] ?? ''));
         $coverImage = $this->normalizeAssetPath($listing?->cover_image_path ?: $requestImage, 'images/pangasinan.jpg');
@@ -497,6 +772,26 @@ class BookingController extends Controller
         ])));
         $resolvedTourTitle = trim((string) ($listing?->title ?? $requestSource?->title ?? 'Custom Tour Booking'));
         $resolvedTourLocation = $listingLocation !== '' ? $listingLocation : $requestLocation;
+
+        // Format tour date and time properly - fix the "Jan 1, 1970" bug
+        $tourDateFormatted = 'Date not set';
+        $tourTimeFormatted = 'Time not set';
+        
+        if ($booking->tour_date !== null) {
+            try {
+                $tourDateFormatted = optional($booking->tour_date)->format('M d, Y') ?? 'Date not set';
+            } catch (\Throwable $_) {
+                $tourDateFormatted = 'Date not set';
+            }
+        }
+        
+        if ($booking->tour_time !== null && trim((string) $booking->tour_time) !== '') {
+            try {
+                $tourTimeFormatted = Carbon::parse($booking->tour_time)->format('g:i A');
+            } catch (\Throwable $_) {
+                $tourTimeFormatted = (string) $booking->tour_time;
+            }
+        }
 
         return [
             'id' => (string) $booking->id,
@@ -516,10 +811,18 @@ class BookingController extends Controller
             'guideLanguages' => (string) ($guideProfile?->languages_spoken ?? ''),
             'guideSpecialties' => (string) ($guideProfile?->areas_of_expertise ?? ''),
             'guideCertifications' => (string) ($guideProfile?->guide_certificate_number ?? ''),
-            'bookingDate' => optional($booking->booked_for_date)->toDateString(),
-            'bookingTime' => (string) ($booking->booked_for_time ?? ''),
+            'bookingDate' => optional($booking->booked_for_date)->toDateString() ?? 'Date not set',
+            'bookingTime' => (string) ($booking->booked_for_time ?? 'Time not set'),
             'bookingDateTime' => $scheduledAt?->toISOString(),
-            'hasBookingSchedule' => $scheduledAt !== null,
+            'tourDate' => $tourDateFormatted,
+            'tourTime' => $tourTimeFormatted,
+            'tourDateRaw' => optional($booking->tour_date)->toDateString(),
+            'tourTimeRaw' => (string) ($booking->tour_time ?? ''),
+            'tourStartDate' => optional($booking->tour_start_date)->toISOString(),
+            'confirmedBookingDate' => optional($booking->confirmed_booking_date)->toISOString(),
+            'paymentReceivedAt' => optional($booking->payment_received_at ?? $booking->paid_at)->toISOString(),
+            'bookingStatus' => $currentBookingStatus,
+            'hasBookingSchedule' => $booking->tour_date !== null && $booking->tour_time !== null,
             'guestCount' => (int) ($booking->guest_count ?? 1),
             'priceSnapshot' => (float) ($booking->price_snapshot ?? 0),
             'total' => (float) ($booking->total_amount ?? 0),
@@ -536,6 +839,11 @@ class BookingController extends Controller
             'status' => (string) ($booking->status ?? 'pending'),
             'state' => $state,
             'isCompletable' => $this->canTouristMarkCompleted($booking),
+            'canMarkComplete' => $this->canTouristMarkCompleted($booking),
+            'canAccept' => $booking->canAccept(),
+            'canDecline' => $booking->canDecline(),
+            'canConfirmSchedule' => $booking->canConfirmSchedule(),
+            'canPay' => $booking->canPay(),
             'completionSecondsLeft' => $completionSecondsLeft,
             'completionAvailableAt' => $scheduledAt?->toISOString(),
             'hasReview' => $review !== null,
@@ -606,17 +914,51 @@ class BookingController extends Controller
         return max(0, (int) floor((float) now()->diffInSeconds($windowEnd, false)));
     }
 
+    private function expirePendingBookingsAfterCancellationWindow(int $touristId): void
+    {
+        if ($touristId <= 0) {
+            return;
+        }
+
+        $expiredPendingBookings = Booking::query()
+            ->where('tourist_id', $touristId)
+            ->where('status', 'pending')
+            ->where('created_at', '<=', now()->subDay())
+            ->get();
+
+        if ($expiredPendingBookings->isEmpty()) {
+            return;
+        }
+
+        foreach ($expiredPendingBookings as $expiredBooking) {
+            if (!$expiredBooking instanceof Booking) {
+                continue;
+            }
+
+            $expiredBooking->status = 'cancelled';
+            $expiredBooking->cancelled_at = $expiredBooking->cancelled_at ?: now();
+
+            if (Schema::hasColumn('bookings', 'booking_status')) {
+                $expiredBooking->booking_status = 'cancelled';
+            }
+
+            $expiredBooking->save();
+
+            event(new BookingStatusUpdated($expiredBooking->fresh(['guide', 'tourListing'])));
+        }
+    }
+
     private function canTouristMarkCompleted(Booking $booking): bool
     {
         if (!in_array((string) $booking->status, ['accepted', 'confirmed'], true)) {
             return false;
         }
 
-        if ($this->bookingScheduledAt($booking) === null) {
+        if (Schema::hasColumn('bookings', 'confirmed_booking_date') && $booking->confirmed_booking_date === null) {
             return false;
         }
 
-        return $this->completionSecondsLeft($booking) <= 0;
+        return strtolower((string) ($booking->payment_status ?? '')) === 'paid';
     }
 
     private function completionSecondsLeft(Booking $booking): int
@@ -631,6 +973,14 @@ class BookingController extends Controller
 
     private function bookingScheduledAt(Booking $booking): ?Carbon
     {
+        if (Schema::hasColumn('bookings', 'confirmed_booking_date') && $booking->confirmed_booking_date) {
+            return Carbon::parse((string) $booking->confirmed_booking_date);
+        }
+
+        if (Schema::hasColumn('bookings', 'tour_start_date') && $booking->tour_start_date) {
+            return Carbon::parse((string) $booking->tour_start_date);
+        }
+
         $date = $booking->booked_for_date;
         if (!$date) {
             return null;
@@ -662,6 +1012,44 @@ class BookingController extends Controller
             return $base->copy()->setTime((int) $parsed->format('H'), (int) $parsed->format('i'), (int) $parsed->format('s'));
         } catch (\Throwable $_error) {
             return $base->copy()->endOfDay();
+        }
+    }
+
+    private function syncLifecycleFields(Booking $booking): void
+    {
+        if (!Schema::hasColumn('bookings', 'booking_status')) {
+            return;
+        }
+
+        $isPaid = strtolower((string) ($booking->payment_status ?? '')) === 'paid';
+        $hasSchedule = $booking->tour_date !== null && $booking->tour_time !== null;
+        $currentState = (string) ($booking->booking_status ?? 'pending');
+
+        // Terminal states should not transition
+        if (in_array($currentState, ['completed', 'declined', 'cancelled'], true)) {
+            return;
+        }
+
+        // State transitions based on payment and schedule
+        if ($currentState === 'pending') {
+            // Stay in pending until explicit accept
+        } elseif ($currentState === 'accepted') {
+            if ($hasSchedule) {
+                $booking->booking_status = 'schedule_confirmed';
+                $booking->schedule_confirmed_at = $booking->schedule_confirmed_at ?: now();
+            }
+        } elseif ($currentState === 'schedule_confirmed') {
+            if ($isPaid) {
+                $booking->booking_status = 'paid';
+                $booking->payment_received_at = $booking->payment_received_at ?: now();
+            } else {
+                $booking->booking_status = 'waiting_payment';
+            }
+        } elseif ($currentState === 'waiting_payment') {
+            if ($isPaid) {
+                $booking->booking_status = 'paid';
+                $booking->payment_received_at = $booking->payment_received_at ?: now();
+            }
         }
     }
 

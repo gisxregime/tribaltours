@@ -11,10 +11,12 @@
     const CHAT_PAYMENT_TRANSACTIONS_KEY = 'tribaltours_chat_payment_transactions_v1';
     const CHAT_SIMULATED_EVENTS_KEY = 'tribaltours_chat_simulated_events_v1';
     const ROLE_KEY = 'role';
-    const STARTER_MESSAGE = 'You have been selected as the tour guide. Start discussing plans and arrangements.';
+    const STARTER_MESSAGE = "Hi! 👋 Welcome and thank you for choosing me as your guide. I'm excited to help make your trip enjoyable and memorable. Feel free to tell me your preferred destination, travel dates, group size, interests (adventure, culture, food, nature, etc.), or any questions you have. I'll help you plan the experience that fits you best.";
     const PENDING_NOTIFICATION_DELETE_DELAY = 4200;
 
     const pendingGuideNotificationDeletes = Object.create(null);
+    let guideToursState = null;
+    let profileRealtimeBound = false;
 
     function qs(selector, scope) {
         return (scope || document).querySelector(selector);
@@ -22,6 +24,20 @@
 
     function qsa(selector, scope) {
         return Array.from((scope || document).querySelectorAll(selector));
+    }
+
+    function closestFromEventTarget(event, selector) {
+        const target = event ? event.target : null;
+        if (!target) {
+            return null;
+        }
+        if (typeof target.closest === 'function') {
+            return target.closest(selector);
+        }
+        if (target.parentElement && typeof target.parentElement.closest === 'function') {
+            return target.parentElement.closest(selector);
+        }
+        return null;
     }
 
     function parseJSON(value, fallback) {
@@ -249,11 +265,20 @@
         init.headers = headers;
 
         return fetch(url, init).then(function (response) {
-            if (response.redirected || response.status === 401 || response.status === 403 || response.status === 419) {
+            const redirectedPath = response.redirected
+                ? String(new URL(response.url, window.location.origin).pathname || '')
+                : '';
+            const redirectedToAuth = /\/(sign-in|login)\b/i.test(redirectedPath);
+
+            if (response.status === 401 || response.status === 419 || redirectedToAuth) {
                 redirectToSignInIfRequired();
                 const authError = new Error('Authentication required.');
                 authError.code = 'auth';
                 throw authError;
+            }
+
+            if (response.redirected) {
+                throw new Error('Unexpected redirect response from server.');
             }
 
             const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -337,6 +362,7 @@
             price: normalized.price,
             priceType: normalized.priceType,
             reservationType: normalized.reservationType,
+            time_slots_json: normalized.timeSlots,
             freeCancellation: toFlag(normalized.freeCancellation),
             reserveNowPayLater: toFlag(normalized.reserveNowPayLater),
             languages: normalized.languages,
@@ -353,7 +379,9 @@
             rating: normalized.rating,
             reviews: normalized.reviews,
             status: normalized.status,
+            cover_image_path: normalized.coverImage || normalized.image,
             coverImage: normalized.coverImage || normalized.image,
+            gallery_paths: normalized.gallery,
             gallery: normalized.gallery
         };
     }
@@ -437,17 +465,20 @@
                 return String(tag || '').trim();
             });
         const cleanTags = tags.filter(Boolean).slice(0, 6);
-        const minGuests = Math.max(1, Number(raw.minGuests || 1));
-        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || 10));
+        const minGuests = Math.max(1, Number(raw.minGuests || raw.min_guests || 1));
+        const maxGuests = Math.max(minGuests, Number(raw.maxGuests || raw.max_guests || 10));
         const guestTypes = parseList(raw.guestTypes, ['Adult']);
-        const timeSlots = parseList(raw.timeSlots, ['08:00 AM', '01:00 PM', '05:00 PM']);
+        const timeSlots = parseList(raw.timeSlots || raw.time_slots_json, ['08:00 AM', '01:00 PM', '05:00 PM']);
         const includes = parseList(raw.includes, ['Boat transfer', 'Entrance fees']);
-        const gallery = Array.isArray(raw.gallery)
-            ? raw.gallery.map(function (src) {
+        const rawGallery = Array.isArray(raw.gallery)
+            ? raw.gallery
+            : (Array.isArray(raw.gallery_paths) ? raw.gallery_paths : []);
+        const gallery = rawGallery
+            .map(function (src) {
                 return String(src || '').trim();
             }).filter(Boolean).slice(0, 10)
-            : [];
-        const fallbackImage = normalizeAssetPath(raw.coverImage || raw.image || gallery[0], '/images/carousel2.jpg');
+        ;
+        const fallbackImage = normalizeAssetPath(raw.coverImage || raw.cover_image_path || raw.image || gallery[0], '/images/carousel2.jpg');
         const finalGallery = gallery.length
             ? gallery.map(function (src) {
                 return normalizeAssetPath(src, fallbackImage);
@@ -460,10 +491,10 @@
             category: String(raw.category || 'Island Hopping').trim(),
             province: String(raw.province || '').trim(),
             city: String(raw.city || '').trim(),
-            meetingArea: String(raw.meetingArea || '').trim(),
+            meetingArea: String(raw.meetingArea || raw.meeting_area || '').trim(),
             location: String(raw.location || ((raw.city || '') + (raw.province ? ', ' + raw.province : ''))).trim(),
-            duration: String(raw.duration || '2 days').trim(),
-            durationHours: String(raw.durationHours || raw.duration || '2 days').trim(),
+            duration: String(raw.duration || raw.duration_label || '2 days').trim(),
+            durationHours: String(raw.durationHours || raw.duration || raw.duration_label || '2 days').trim(),
             minGuests: minGuests,
             maxGuests: maxGuests,
             pax: String(raw.pax || (String(minGuests) + '-' + String(maxGuests) + ' guests')).trim(),
@@ -473,30 +504,30 @@
             rating: Math.min(Math.max(Number(raw.rating || 0), 0), 5),
             reviews: Math.max(0, Math.round(Number(raw.reviews || 0))),
             price: Math.max(1, Math.round(Number(raw.price || 0))),
-            priceType: String(raw.priceType || 'Per person').trim(),
-            reservationType: String(raw.reservationType || 'Instant booking').trim(),
+            priceType: String(raw.priceType || raw.price_type || 'Per person').trim(),
+            reservationType: String(raw.reservationType || raw.reservation_type || 'Instant booking').trim(),
             status: String(raw.status || 'Draft').trim(),
             provider: String(raw.provider || raw.guide || defaultProvider).trim() || defaultProvider,
             languages: String(raw.languages || defaultLanguages).trim() || defaultLanguages,
             meetingPoint: String(raw.meetingPoint || 'Main tourist pickup point').trim() || 'Main tourist pickup point',
-            freeCancellation: parseBool(raw.freeCancellation, true),
+            freeCancellation: parseBool(raw.freeCancellation != null ? raw.freeCancellation : raw.free_cancellation, true),
             cancellationText: String(raw.cancellationText || 'Cancel up to 24 hours in advance for a full refund').trim(),
-            reserveNowPayLater: parseBool(raw.reserveNowPayLater, true),
+            reserveNowPayLater: parseBool(raw.reserveNowPayLater != null ? raw.reserveNowPayLater : raw.reserve_now_pay_later, true),
             includes: includes,
             excludes: String(raw.excludes || '').trim(),
             requirements: String(raw.requirements || '').trim(),
-            safetyInfo: String(raw.safetyInfo || '').trim(),
+            safetyInfo: String(raw.safetyInfo || raw.safety_info || '').trim(),
             guidePhoto: normalizeAssetPath(raw.guidePhoto || raw.guideAvatar || profile.avatar, '/images/manila.jpg'),
             guideVerified: parseBool(raw.guideVerified, false),
             guideExperienceYears: Math.max(0, Number(raw.guideExperienceYears || 1)),
             guideContact: String(raw.guideContact || '').trim(),
             guideSocial: String(raw.guideSocial || '').trim(),
             tags: cleanTags,
-            weatherSuitability: String(raw.weatherSuitability || '').trim(),
-            bestSeason: String(raw.bestSeason || '').trim(),
-            childFriendly: parseBool(raw.childFriendly, false),
-            petFriendly: parseBool(raw.petFriendly, false),
-            description: String(raw.description || '').trim(),
+            weatherSuitability: String(raw.weatherSuitability || raw.weather_suitability || '').trim(),
+            bestSeason: String(raw.bestSeason || raw.best_season || '').trim(),
+            childFriendly: parseBool(raw.childFriendly != null ? raw.childFriendly : raw.child_friendly, false),
+            petFriendly: parseBool(raw.petFriendly != null ? raw.petFriendly : raw.pet_friendly, false),
+            description: String(raw.description || raw.short_description || '').trim(),
             image: normalizeAssetPath(finalGallery[0], '/images/carousel2.jpg'),
             coverImage: normalizeAssetPath(finalGallery[0], '/images/carousel2.jpg'),
             gallery: finalGallery
@@ -831,13 +862,24 @@
     }
 
     function getGuideTours() {
+        if (Array.isArray(guideToursState)) {
+            return guideToursState.map(normalizeGuideTour);
+        }
+
         const tours = readStore(GUIDE_TOURS_KEY, []);
-        return Array.isArray(tours) ? tours.map(normalizeGuideTour) : [];
+        const normalized = Array.isArray(tours) ? tours.map(normalizeGuideTour) : [];
+        guideToursState = normalized;
+        return normalized.slice();
     }
 
     function setGuideTours(tours) {
         const list = Array.isArray(tours) ? tours.map(normalizeGuideTour) : [];
-        writeStore(GUIDE_TOURS_KEY, list);
+        guideToursState = list;
+        try {
+            writeStore(GUIDE_TOURS_KEY, list);
+        } catch (_error) {
+            // Keep runtime state even if persistent storage quota is exceeded.
+        }
     }
 
     function getGuideBookings() {
@@ -1150,10 +1192,44 @@
         });
     }
 
+    function syncGuideProfileIntoTours(profile) {
+        const normalized = normalizeGuideProfileSnapshot(profile);
+        const avatarUrl = normalizeAssetPath(normalized.avatar, '/images/manila.jpg');
+        const providerName = String(normalized.name || '').trim();
+        const tours = getGuideTours();
+        if (!tours.length) {
+            return;
+        }
+
+        let changed = false;
+        const updated = tours.map(function (tour) {
+            const next = Object.assign({}, tour);
+            if (String(next.guideAvatar || '').trim() !== avatarUrl) {
+                next.guideAvatar = avatarUrl;
+                changed = true;
+            }
+            if (String(next.guidePhoto || '').trim() !== avatarUrl) {
+                next.guidePhoto = avatarUrl;
+                changed = true;
+            }
+            if (providerName && String(next.provider || '').trim() !== providerName) {
+                next.provider = providerName;
+                changed = true;
+            }
+            return next;
+        });
+
+        if (changed) {
+            setGuideTours(updated);
+        }
+    }
+
     function setGuideProfile(profile) {
         const safeProfile = profile && typeof profile === 'object' ? profile : {};
-        writeStore(GUIDE_PROFILE_KEY, safeProfile);
-        applyGuideWorkspaceIdentity(safeProfile);
+        const normalized = normalizeGuideProfileSnapshot(safeProfile);
+        writeStore(GUIDE_PROFILE_KEY, normalized);
+        applyGuideWorkspaceIdentity(normalized);
+        syncGuideProfileIntoTours(normalized);
     }
 
     function normalizeGuideProfileSnapshot(payload) {
@@ -1161,6 +1237,7 @@
         const fallback = defaultProfile();
 
         return {
+            id: String(source.id || ''),
             name: String(source.name || fallback.name),
             location: String(source.location || fallback.location),
             bio: String(source.bio || fallback.bio),
@@ -1204,6 +1281,49 @@
             const normalized = normalizeGuideProfileSnapshot(profilePayload);
             setGuideProfile(normalized);
             return normalized;
+        });
+    }
+
+    function initProfileRealtimeSync() {
+        if (profileRealtimeBound) {
+            return;
+        }
+
+        const bindChannels = function () {
+            if (profileRealtimeBound) {
+                return;
+            }
+
+            profileRealtimeBound = true;
+
+            subscribeRealtime('guide-profiles', 'guide-profile.updated', function (payload) {
+                const incoming = normalizeGuideProfileSnapshot(payload && payload.guide ? payload.guide : payload);
+                const current = normalizeGuideProfileSnapshot(getGuideProfile());
+                const currentGuideId = String(current.id || '').trim();
+                const incomingGuideId = String(incoming.id || '').trim();
+
+                if (currentGuideId && incomingGuideId && currentGuideId !== incomingGuideId) {
+                    return;
+                }
+
+                setGuideProfile(incoming);
+                syncGuideNotificationsFromApi();
+            });
+
+            subscribeRealtime('tourist-profiles', 'tourist-profile.updated', function () {
+                syncGuideNotificationsFromApi();
+            });
+        };
+
+        if (window.TRBL_PUSHER && window.TRBL_PUSHER.key) {
+            bindChannels();
+            return;
+        }
+
+        syncGuideNotificationsFromApi().finally(function () {
+            if (window.TRBL_PUSHER && window.TRBL_PUSHER.key) {
+                bindChannels();
+            }
         });
     }
 
@@ -1604,6 +1724,42 @@
         instance.hide();
     }
 
+    function dismissAllOpenDropdowns() {
+        qsa('[data-bs-toggle="dropdown"][aria-expanded="true"]').forEach(function (trigger) {
+            if (window.bootstrap && window.bootstrap.Dropdown) {
+                const instance = window.bootstrap.Dropdown.getInstance(trigger);
+                if (instance) {
+                    instance.hide();
+                    return;
+                }
+            }
+            trigger.setAttribute('aria-expanded', 'false');
+        });
+
+        qsa('.dropdown.show').forEach(function (dropdown) {
+            dropdown.classList.remove('show');
+        });
+
+        qsa('.dropdown-menu.show').forEach(function (menu) {
+            menu.classList.remove('show');
+        });
+    }
+
+    function bindDropdownDismissOnNavigation() {
+        if (window.__trblGuideDropdownDismissBound) {
+            return;
+        }
+        window.__trblGuideDropdownDismissBound = true;
+
+        window.addEventListener('popstate', dismissAllOpenDropdowns);
+        window.addEventListener('beforeunload', dismissAllOpenDropdowns);
+        window.addEventListener('pageshow', function (event) {
+            if (event && event.persisted) {
+                dismissAllOpenDropdowns();
+            }
+        });
+    }
+
     function ensureConversation(touristName, avatar, tourTitle, idHint) {
         const normalizedName = String(touristName || 'Tourist').trim();
         const conversationId = idHint || ('conv-' + normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
@@ -1869,7 +2025,10 @@
                 '<h3 class="h6 mb-2">Request Comments</h3>',
                 '<div class="thread-list mb-2">', rendered, '</div>',
                 '<form data-request-comment-form="', escapeHtml(String(request && request.id ? request.id : '')), '">',
+                '<div class="position-relative">',
                 '<textarea class="input-soft" rows="2" data-comment-text placeholder="Write your comment for this request..." required></textarea>',
+                '<div class="comment-timer-display" data-comment-timer style="display:none; position:absolute; bottom:5px; right:5px; font-size:0.75rem; color:#999;"></div>',
+                '</div>',
                 '<div class="d-flex justify-content-end mt-2">',
                 '<button class="btn-charcoal" type="submit"><i class="fa-regular fa-paper-plane me-1"></i>Post Comment</button>',
                 '</div>',
@@ -1958,6 +2117,14 @@
             const textarea = qs('[data-comment-text]', form);
             const message = String(textarea ? textarea.value : '').trim();
             if (!message) {
+
+                    // Clear timer on submit
+                    const timerDisplay = qs('[data-comment-timer]', form);
+                    if (timerDisplay && timerDisplay.dataset.timerId) {
+                        clearInterval(Number(timerDisplay.dataset.timerId));
+                        timerDisplay.dataset.timerId = '';
+                        timerDisplay.style.display = 'none';
+                    }
                 return;
             }
 
@@ -2061,6 +2228,40 @@
         syncRequestsFromApi();
         initRealtimeRequestFeed();
         initRequestFeedPolling();
+
+            // Add timer tracking for comment input
+            function trackCommentInput() {
+                const textareas = qsa('[data-comment-text]', host);
+                textareas.forEach(function (textarea) {
+                    textarea.addEventListener('input', function () {
+                        const form = textarea.closest('form[data-request-comment-form]');
+                        if (!form) {
+                            return;
+                        }
+                        const timerDisplay = qs('[data-comment-timer]', form);
+                        if (!timerDisplay) {
+                            return;
+                        }
+                        const hasContent = textarea.value.trim().length > 0;
+                        if (!hasContent) {
+                            if (timerDisplay.dataset.timerId) {
+                                clearInterval(Number(timerDisplay.dataset.timerId));
+                                timerDisplay.dataset.timerId = '';
+                            }
+                            timerDisplay.style.display = 'none';
+                            return;
+                        }
+                        timerDisplay.style.display = '';
+                        timerDisplay.textContent = 'Timer active...';
+                    });
+                });
+            }
+            trackCommentInput();
+            window.addEventListener('storage', function (event) {
+                if (!event || event.key === TOURIST_REQUESTS_KEY) {
+                    trackCommentInput();
+                }
+            });
     }
 
     function initBookingRequestsPage() {
@@ -2089,6 +2290,20 @@
             return normalized.charAt(0).toUpperCase() + normalized.slice(1);
         }
 
+        function toPaymentStatusLabel(value) {
+            const normalized = String(value || '').trim().toLowerCase();
+            if (normalized === 'paid') {
+                return 'Paid';
+            }
+            if (normalized === 'partial') {
+                return 'Partially Paid';
+            }
+            if (normalized === 'refunded') {
+                return 'Refunded';
+            }
+            return 'Unpaid';
+        }
+
         function normalizeBooking(item) {
             const source = item && typeof item === 'object' ? item : {};
             const rawStatus = String(source.statusRaw || source.status || 'pending').trim().toLowerCase();
@@ -2101,6 +2316,12 @@
                 touristName: String(source.touristName || 'Tourist'),
                 touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
                 bookingDate: source.bookingDate || null,
+                tourStartDate: source.tourStartDate || null,
+                confirmedBookingDate: source.confirmedBookingDate || null,
+                paymentReceivedAt: source.paymentReceivedAt || null,
+                paymentStatus: String(source.paymentStatus || 'unpaid'),
+                paymentMethod: String(source.paymentMethod || ''),
+                total: Number(source.total || 0),
                 guests: String(source.guests || (source.guestCount ? String(source.guestCount) + ' guests' : '1 guest')),
                 statusRaw: rawStatus,
                 status: toStatusLabel(rawStatus)
@@ -2124,15 +2345,20 @@
             });
         }
 
-        function updateBookingStatus(bookingId, status) {
-            return apiRequest('/guide/booking-requests/' + encodeURIComponent(String(bookingId)), {
-                method: 'PUT',
+        function updateBookingStatus(bookingId, action) {
+            // Map action to new endpoint
+            const endpoint = action === 'accepted' ? '/guide/booking-requests/' + encodeURIComponent(String(bookingId)) + '/accept'
+                           : action === 'declined' ? '/guide/booking-requests/' + encodeURIComponent(String(bookingId)) + '/decline'
+                           : '/guide/booking-requests/' + encodeURIComponent(String(bookingId));
+            
+            return apiRequest(endpoint, {
+                method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': getCsrfToken()
                 },
-                body: JSON.stringify({ status: status })
+                body: action === 'accepted' || action === 'declined' ? undefined : JSON.stringify({ action: action })
             });
         }
 
@@ -2140,12 +2366,14 @@
             if (!listHost) {
                 return;
             }
+
             const tourMap = getTourMap();
             const bookings = getGuideBookings();
             const filtered = activeFilter === 'All'
                 ? bookings
                 : bookings.filter(function (item) {
-                    return item.status === activeFilter;
+                    const bookingStatus = String(item.bookingStatus || item.statusRaw || item.status || 'pending').toLowerCase();
+                    return bookingStatus === activeFilter.toLowerCase() || item.status === activeFilter;
                 });
 
             listHost.innerHTML = '';
@@ -2163,9 +2391,18 @@
                 const tour = tourMap[booking.tourId] || null;
                 const image = booking.tourImage || (tour ? tour.image : 'images/pangasinan.jpg');
                 const title = booking.tourTitle || (tour ? tour.title : 'Custom Tour Booking');
-                const normalized = String(booking.statusRaw || booking.status || '').toLowerCase();
-                const canReviewDecision = normalized === 'pending';
-                const canComplete = normalized === 'accepted' || normalized === 'confirmed' || normalized === 'booked';
+                const bookingStatus = String(booking.bookingStatus || booking.statusRaw || booking.status || 'pending').toLowerCase();
+                const canAccept = bookingStatus === 'pending' && Boolean(booking.canAccept);
+                const canDecline = bookingStatus === 'pending' && Boolean(booking.canDecline);
+                const hasConfirmedDate = Boolean(booking.tourDate && booking.tourDate !== 'Date not set');
+                const isPaid = String(booking.paymentStatus || '').toLowerCase() === 'paid';
+                const canComplete = Boolean(booking.canMarkCompleted) && hasConfirmedDate && isPaid;
+                const tourSchedule = booking.tourDate || booking.confirmedBookingDate || booking.tourStartDate || booking.bookingDate;
+                const statusDisplay = 
+                    bookingStatus === 'schedule_confirmed' ? 'Awaiting Payment' :
+                    bookingStatus === 'waiting_payment' ? 'Awaiting Payment' :
+                    bookingStatus === 'paid' ? 'Payment Received' :
+                    String(booking.status || 'Pending');
                 const card = document.createElement('article');
                 card.className = 'booking-card';
                 card.dataset.bookingId = booking.id;
@@ -2174,22 +2411,29 @@
                     '<div class="booking-body">',
                     '<div class="d-flex justify-content-between align-items-start gap-2">',
                     '<h2 class="h6 mb-0">', escapeHtml(title), '</h2>',
-                    '<span class="status-pill ', booking.status === 'Accepted' ? 'completed' : '', '">', escapeHtml(booking.status), '</span>',
+                    '<span class="status-pill ', bookingStatus === 'completed' ? 'completed' : bookingStatus === 'declined' || bookingStatus === 'cancelled' ? 'cancelled' : '', '">', escapeHtml(statusDisplay), '</span>',
                     '</div>',
                     '<div class="d-flex align-items-center gap-2 mt-2">',
                     '<img src="', escapeHtml(booking.touristAvatar || '../images/manila.jpg'), '" alt="', escapeHtml(booking.touristName), '" style="width:30px;height:30px;border-radius:50%;object-fit:cover;">',
                     '<small>', escapeHtml(booking.touristName), '</small>',
                     '</div>',
-                    '<p class="small text-muted mb-1 mt-2">Booking date: ', escapeHtml(formatDate(booking.bookingDate)), '</p>',
+                    '<p class="small text-muted mb-1 mt-2">Tour scheduled: ', escapeHtml(tourSchedule || 'Date not set'), '</p>',
+                    '<p class="small text-muted mb-1">Payment: ', escapeHtml(toPaymentStatusLabel(booking.paymentStatus)), booking.paymentMethod ? (' via ' + escapeHtml(booking.paymentMethod)) : '', ' • ', escapeHtml(formatSimulatedPeso(Number(booking.total || 0))), '</p>',
+                    booking.paymentReceivedAt ? '<p class="small text-muted mb-1">Payment received: ' + escapeHtml(formatDate(booking.paymentReceivedAt)) + '</p>' : (isPaid ? '' : '<p class="small text-warning mb-1">Payment not received yet.</p>'),
                     '<p class="small text-muted mb-2">Guests: ', escapeHtml(booking.guests || '1 guest'), '</p>',
-                    '<div class="d-flex gap-2">',
-                    '<button class="btn-charcoal w-100" type="button" data-accept-booking="', escapeHtml(booking.id), '"', canReviewDecision ? '' : ' disabled', '>Accept</button>',
-                    '<button class="btn-danger w-100" type="button" data-decline-booking="', escapeHtml(booking.id), '"', canReviewDecision ? '' : ' disabled', '>Decline</button>',
-                    '</div>',
-                    canComplete
-                        ? '<div class="d-flex gap-2 mt-2"><button class="btn-soft w-100" type="button" data-complete-booking="' + escapeHtml(booking.id) + '">Mark Completed</button></div>'
+                    bookingStatus === 'pending'
+                        ? '<div class="d-flex gap-2"><button class="btn-charcoal flex-fill" type="button" data-accept-booking="' + escapeHtml(booking.id) + '"' + (canAccept ? '' : ' disabled') + '>Accept</button><button class="btn-danger flex-fill" type="button" data-decline-booking="' + escapeHtml(booking.id) + '"' + (canDecline ? '' : ' disabled') + '>Decline</button></div>'
+                        : bookingStatus === 'accepted'
+                        ? '<p class="small text-success mt-2">Booking accepted. Waiting for tourist to confirm schedule.</p>'
+                        : bookingStatus === 'schedule_confirmed'
+                        ? '<p class="small text-muted mt-2">Schedule confirmed. Waiting for payment...</p>'
+                        : bookingStatus === 'waiting_payment'
+                        ? '<p class="small text-muted mt-2">Waiting for payment confirmation...</p>'
+                        : bookingStatus === 'paid'
+                        ? '<div><button class="btn-gold w-100 mt-2" type="button" data-complete-booking="' + escapeHtml(booking.id) + '"' + (canComplete ? '' : ' disabled') + '>Mark Completed</button></div>'
                         : '',
-                    '</div>',
+                    (bookingStatus === 'completed' ? '<p class="small text-success mt-2">Tour completed ✓</p>' : ''),
+                    (bookingStatus === 'declined' || bookingStatus === 'cancelled' ? '<p class="small text-danger mt-2">Booking cancelled</p>' : ''),
                     '</div>'
                 ].join('');
                 listHost.appendChild(card);
@@ -2211,15 +2455,16 @@
                 const acceptBtn = event.target.closest('[data-accept-booking]');
                 const declineBtn = event.target.closest('[data-decline-booking]');
                 const completeBtn = event.target.closest('[data-complete-booking]');
+
                 if (!acceptBtn && !declineBtn && !completeBtn) {
                     return;
                 }
                 const id = (acceptBtn || declineBtn || completeBtn).dataset.acceptBooking
                     || (acceptBtn || declineBtn || completeBtn).dataset.declineBooking
                     || (acceptBtn || declineBtn || completeBtn).dataset.completeBooking;
-                const nextStatus = acceptBtn ? 'accepted' : (declineBtn ? 'declined' : 'completed');
+                const action = acceptBtn ? 'accepted' : (declineBtn ? 'declined' : 'completed');
 
-                updateBookingStatus(id, nextStatus).then(function (data) {
+                updateBookingStatus(id, action).then(function (data) {
                     const updatedBooking = data && data.booking ? normalizeBooking(data.booking) : null;
                     if (updatedBooking) {
                         const current = getGuideBookings();
@@ -2230,7 +2475,10 @@
                     }
                     render();
                     syncGuideNotificationsFromApi();
-                    showToast('Booking request updated to ' + toStatusLabel(nextStatus) + '.', 'success');
+                    const message = action === 'accepted' ? 'Booking accepted! Waiting for tourist to confirm schedule.'
+                                  : action === 'declined' ? 'Booking declined.'
+                                  : 'Booking marked as completed.';
+                    showToast(message, 'success');
                 }).catch(function (error) {
                     showToast(error && error.message ? error.message : 'Unable to update booking request.', 'danger');
                 });
@@ -2273,48 +2521,28 @@
         const fields = {
             id: qs('#tourId'),
             title: qs('#tourTitle'),
+            shortDescription: qs('#tourShortDescription'),
             category: qs('#tourCategory'),
-            province: qs('#tourProvince'),
+            duration: qs('#tourDuration'),
+            region: qs('#tourRegion'),
             city: qs('#tourCity'),
             meetingArea: qs('#tourMeetingArea'),
-            duration: qs('#tourDuration'),
             meetingPoint: qs('#tourMeetingPoint'),
             price: qs('#tourPrice'),
             priceType: qs('#tourPriceType'),
             minGuests: qs('#tourMinGuests'),
             maxGuests: qs('#tourMaxGuests'),
-            guestAdult: qs('#tourGuestAdult'),
-            guestChildren: qs('#tourGuestChildren'),
-            guestSenior: qs('#tourGuestSenior'),
             timeSlots: qs('#tourTimeSlots'),
             reservationType: qs('#tourReservationType'),
-            freeCancellation: qs('#tourFreeCancellation'),
-            cancellationText: qs('#tourCancellationText'),
-            reservePayLater: qs('#tourReservePayLater'),
-            status: qs('#tourStatus'),
-            provider: qs('#tourProvider'),
             languages: qs('#tourLanguages'),
             includes: qs('#tourIncludes'),
             excludes: qs('#tourExcludes'),
             requirements: qs('#tourRequirements'),
             safetyInfo: qs('#tourSafetyInfo'),
-            guidePhoto: qs('#tourGuidePhoto'),
-            guidePhotoPreview: qs('#tourGuidePhotoPreview'),
-            guideVerified: qs('#tourGuideVerified'),
-            guideExperience: qs('#tourGuideExperience'),
-            guideContact: qs('#tourGuideContact'),
-            guideSocial: qs('#tourGuideSocial'),
-            difficulty: qs('#tourDifficulty'),
-            tags: qs('#tourTags'),
-            weather: qs('#tourWeather'),
-            bestSeason: qs('#tourBestSeason'),
-            childFriendly: qs('#tourChildFriendly'),
-            petFriendly: qs('#tourPetFriendly'),
-            rating: qs('#tourRating'),
-            reviews: qs('#tourReviews'),
             images: qs('#tourImages'),
             imagePreview: qs('#tourImagePreview'),
-            description: qs('#tourDescription')
+            imageMeta: qs('#tourImageMeta'),
+            clearImagesBtn: qs('#tourClearImages')
         };
         const saveDraftBtn = qs('#tourSaveDraft');
         const dropzone = qs('#tourDropzone');
@@ -2322,29 +2550,7 @@
 
         let previewGallery = [];
         let imageTouched = false;
-        let guidePhotoTouched = false;
         let draftTimer = null;
-
-        function selectedGuestTypes() {
-            return [
-                fields.guestAdult && fields.guestAdult.checked ? 'Adult' : '',
-                fields.guestChildren && fields.guestChildren.checked ? 'Children' : '',
-                fields.guestSenior && fields.guestSenior.checked ? 'Senior' : ''
-            ].filter(Boolean);
-        }
-
-        function setGuestTypes(types) {
-            const set = Array.isArray(types) ? types : [];
-            if (fields.guestAdult) {
-                fields.guestAdult.checked = set.includes('Adult');
-            }
-            if (fields.guestChildren) {
-                fields.guestChildren.checked = set.includes('Children');
-            }
-            if (fields.guestSenior) {
-                fields.guestSenior.checked = set.includes('Senior');
-            }
-        }
 
         function parseListValue(value) {
             return String(value || '')
@@ -2366,11 +2572,11 @@
 
         function normalizeLocation() {
             const city = String(fields.city ? fields.city.value : '').trim();
-            const province = String(fields.province ? fields.province.value : '').trim();
-            if (city && province) {
-                return city + ', ' + province;
+            const region = String(fields.region ? fields.region.value : '').trim();
+            if (city && region) {
+                return city + ', ' + region;
             }
-            return city || province || '';
+            return city || region || '';
         }
 
         function clearForm() {
@@ -2383,20 +2589,8 @@
             }
             previewGallery = [];
             imageTouched = false;
-            guidePhotoTouched = false;
             renderGallery(fields.imagePreview, [], 'Tour', true);
             updateImageMeta();
-            const profile = getGuideProfile();
-            if (fields.provider) {
-                fields.provider.value = String(profile && profile.name ? profile.name : '');
-            }
-            if (fields.languages) {
-                fields.languages.value = String(profile && profile.languages ? profile.languages : 'English, Filipino');
-            }
-            if (fields.guidePhotoPreview) {
-                fields.guidePhotoPreview.src = String(profile && profile.avatar ? profile.avatar : '../images/manila.jpg');
-            }
-            setGuestTypes(['Adult']);
             setUploadProgress(0);
             writeStore(GUIDE_TOUR_DRAFT_KEY, null);
         }
@@ -2479,101 +2673,89 @@
         function buildPayload(existingTour, forcedStatus) {
             const existing = existingTour || null;
             const galleryBase = imageTouched
-                ? previewGallery.slice(0, 10)
-                : (existing && Array.isArray(existing.gallery) ? existing.gallery.slice(0, 10) : previewGallery.slice(0, 10));
+                ? previewGallery.slice(0, 5)
+                : (
+                    existing && Array.isArray(existing.gallery_paths)
+                        ? existing.gallery_paths.slice(0, 5)
+                        : (
+                            existing && Array.isArray(existing.gallery)
+                                ? existing.gallery.slice(0, 5)
+                                : previewGallery.slice(0, 5)
+                        )
+                );
             const gallery = galleryBase.filter(Boolean);
-            const guidePhoto = guidePhotoTouched
-                ? String(fields.guidePhotoPreview ? fields.guidePhotoPreview.src : '')
-                : String(existing && existing.guidePhoto ? existing.guidePhoto : (fields.guidePhotoPreview ? fields.guidePhotoPreview.src : ''));
             const minGuests = Math.max(1, Number(fields.minGuests ? fields.minGuests.value : 1));
             const maxGuests = Math.max(minGuests, Number(fields.maxGuests ? fields.maxGuests.value : 10));
             const title = String(fields.title ? fields.title.value : '').trim();
 
-            return normalizeGuideTour({
+            return {
                 id: fields.id && fields.id.value ? fields.id.value : uid('guide-tour'),
                 title: title,
+                short_description: String(fields.shortDescription ? fields.shortDescription.value : '').trim(),
                 category: String(fields.category ? fields.category.value : '').trim(),
-                province: String(fields.province ? fields.province.value : '').trim(),
+                province: String(fields.region ? fields.region.value : '').trim(),
+                region: String(fields.region ? fields.region.value : '').trim(),
                 city: String(fields.city ? fields.city.value : '').trim(),
-                meetingArea: String(fields.meetingArea ? fields.meetingArea.value : '').trim(),
-                location: normalizeLocation(),
-                duration: String(fields.duration ? fields.duration.value : '').trim(),
-                durationHours: String(fields.duration ? fields.duration.value : '').trim(),
-                minGuests: minGuests,
-                maxGuests: maxGuests,
-                pax: String(minGuests) + '-' + String(maxGuests) + ' guests',
-                guestTypes: selectedGuestTypes(),
-                timeSlots: parseListValue(fields.timeSlots ? fields.timeSlots.value : ''),
+                meeting_area: String(fields.meetingArea ? fields.meetingArea.value : '').trim(),
+                meeting_point: String(fields.meetingPoint ? fields.meetingPoint.value : '').trim(),
+                duration_label: String(fields.duration ? fields.duration.value : '').trim(),
+                min_guests: minGuests,
+                max_guests: maxGuests,
                 price: Math.max(1, Number(fields.price ? fields.price.value : 0)),
-                priceType: String(fields.priceType ? fields.priceType.value : 'Per person').trim(),
-                reservationType: String(fields.reservationType ? fields.reservationType.value : 'Instant booking').trim(),
-                freeCancellation: Boolean(fields.freeCancellation ? fields.freeCancellation.checked : true),
-                cancellationText: String(fields.cancellationText ? fields.cancellationText.value : '').trim(),
-                reserveNowPayLater: Boolean(fields.reservePayLater ? fields.reservePayLater.checked : true),
-                provider: String(fields.provider ? fields.provider.value : '').trim(),
+                price_type: String(fields.priceType ? fields.priceType.value : 'per_person').trim(),
+                reservation_type: String(fields.reservationType ? fields.reservationType.value : 'instant').trim(),
+                time_slots_json: parseListValue(fields.timeSlots ? fields.timeSlots.value : ''),
                 languages: String(fields.languages ? fields.languages.value : '').trim(),
-                meetingPoint: String(fields.meetingPoint ? fields.meetingPoint.value : '').trim(),
                 includes: parseListValue(fields.includes ? fields.includes.value : ''),
                 excludes: String(fields.excludes ? fields.excludes.value : '').trim(),
                 requirements: String(fields.requirements ? fields.requirements.value : '').trim(),
-                safetyInfo: String(fields.safetyInfo ? fields.safetyInfo.value : '').trim(),
-                guidePhoto: guidePhoto,
-                guideVerified: Boolean(fields.guideVerified ? fields.guideVerified.checked : false),
-                guideExperienceYears: Math.max(0, Number(fields.guideExperience ? fields.guideExperience.value : 0)),
-                guideContact: String(fields.guideContact ? fields.guideContact.value : '').trim(),
-                guideSocial: String(fields.guideSocial ? fields.guideSocial.value : '').trim(),
-                difficulty: String(fields.difficulty ? fields.difficulty.value : 'Moderate').trim(),
-                tags: parseListValue(fields.tags ? fields.tags.value : '').slice(0, 8),
-                weatherSuitability: String(fields.weather ? fields.weather.value : '').trim(),
-                bestSeason: String(fields.bestSeason ? fields.bestSeason.value : '').trim(),
-                childFriendly: Boolean(fields.childFriendly ? fields.childFriendly.checked : false),
-                petFriendly: Boolean(fields.petFriendly ? fields.petFriendly.checked : false),
-                rating: Number(fields.rating ? fields.rating.value : 0),
-                reviews: Number(fields.reviews ? fields.reviews.value : 0),
-                status: String(forcedStatus || (fields.status ? fields.status.value : 'Draft')).trim(),
-                description: String(fields.description ? fields.description.value : '').trim(),
-                coverImage: gallery[0] || (existing && existing.coverImage) || '../images/carousel2.jpg',
-                gallery: gallery,
-                image: gallery[0] || (existing && existing.image) || '../images/carousel2.jpg'
-            });
+                safety_info: String(fields.safetyInfo ? fields.safetyInfo.value : '').trim(),
+                status: String(forcedStatus || '').trim().toLowerCase() === 'published' ? 'published' : 'draft',
+                is_active: true,
+                cover_image_path: gallery[0] || (existing && existing.cover_image_path) || null,
+                gallery_paths: gallery
+            };
         }
 
         function validatePayload(payload) {
             const errors = [];
-            if (!payload.title) {
-                errors.push({ field: fields.title, message: 'Tour title is required.' });
+            if (!payload.title || payload.title.length < 5) {
+                errors.push({ field: fields.title, message: 'Tour title is required (at least 5 characters).' });
             }
-            if (!payload.description || payload.description.length < 20) {
-                errors.push({ field: fields.description, message: 'Description must be at least 20 characters.' });
+            if (!payload.short_description || payload.short_description.length < 20) {
+                errors.push({ field: fields.shortDescription, message: 'Short description must be at least 20 characters.' });
             }
-            if (!payload.province) {
-                errors.push({ field: fields.province, message: 'Province is required.' });
+            if (!payload.category) {
+                errors.push({ field: fields.category, message: 'Tour category is required.' });
             }
-            if (!payload.city) {
-                errors.push({ field: fields.city, message: 'City or municipality is required.' });
-            }
-            if (!payload.meetingArea) {
-                errors.push({ field: fields.meetingArea, message: 'Specific meeting area is required.' });
-            }
-            if (!payload.meetingPoint) {
-                errors.push({ field: fields.meetingPoint, message: 'Meeting point is required.' });
-            }
-            if (!payload.duration) {
+            if (!payload.duration_label) {
                 errors.push({ field: fields.duration, message: 'Tour duration is required.' });
             }
+            if (!payload.province) {
+                errors.push({ field: fields.region, message: 'Region is required.' });
+            }
+            if (!payload.city) {
+                errors.push({ field: fields.city, message: 'City / Municipality is required.' });
+            }
+            if (!payload.meeting_area) {
+                errors.push({ field: fields.meetingArea, message: 'Specific meeting area is required.' });
+            }
+            if (!payload.meeting_point) {
+                errors.push({ field: fields.meetingPoint, message: 'Meeting point is required.' });
+            }
             if (Number(payload.price) < 1) {
-                errors.push({ field: fields.price, message: 'Base price must be at least 1.' });
+                errors.push({ field: fields.price, message: 'Base price must be at least ₱1.' });
             }
-            if (!payload.guestTypes || !payload.guestTypes.length) {
-                errors.push({ field: fields.guestAdult, message: 'Select at least one guest type.' });
-            }
-            if (!payload.timeSlots || !payload.timeSlots.length) {
+            if (!payload.time_slots_json || !Array.isArray(payload.time_slots_json) || !payload.time_slots_json.length) {
                 errors.push({ field: fields.timeSlots, message: 'Add at least one available time slot.' });
             }
-            if (!Array.isArray(payload.gallery) || payload.gallery.length < 3 || payload.gallery.length > 10) {
-                errors.push({ field: fields.images, message: 'Please upload between 3 and 10 images.' });
+            if (!payload.languages) {
+                errors.push({ field: fields.languages, message: 'Languages spoken is required.' });
             }
-            if (Number(payload.maxGuests) < Number(payload.minGuests)) {
+            if (!Array.isArray(payload.gallery_paths) || payload.gallery_paths.length < 3 || payload.gallery_paths.length > 5) {
+                errors.push({ field: fields.images, message: 'Please upload 3 to 5 images.' });
+            }
+            if (Number(payload.max_guests) < Number(payload.min_guests)) {
                 errors.push({ field: fields.maxGuests, message: 'Maximum guests cannot be lower than minimum guests.' });
             }
             return errors;
@@ -2587,65 +2769,54 @@
                 fields.id.value = tour.id;
             }
             if (fields.title) {
-                fields.title.value = tour.title;
+                fields.title.value = tour.title || '';
+            }
+            if (fields.shortDescription) {
+                fields.shortDescription.value = tour.short_description || tour.description || '';
             }
             if (fields.category) {
-                fields.category.value = tour.category || 'Island Hopping';
+                fields.category.value = tour.category || '';
             }
-            if (fields.province) {
-                fields.province.value = tour.province || '';
+            if (fields.region) {
+                fields.region.value = tour.region || tour.province || '';
             }
             if (fields.city) {
                 fields.city.value = tour.city || '';
             }
             if (fields.meetingArea) {
-                fields.meetingArea.value = tour.meetingArea || '';
+                fields.meetingArea.value = tour.meeting_area || '';
             }
             if (fields.duration) {
-                fields.duration.value = tour.duration;
+                fields.duration.value = tour.duration_label || tour.duration || '';
             }
             if (fields.meetingPoint) {
-                fields.meetingPoint.value = tour.meetingPoint || '';
+                fields.meetingPoint.value = tour.meeting_point || '';
             }
             if (fields.price) {
-                fields.price.value = String(tour.price);
+                fields.price.value = String(tour.price || 0);
             }
             if (fields.priceType) {
-                fields.priceType.value = tour.priceType || 'Per person';
+                fields.priceType.value = tour.price_type || tour.priceType || 'per_person';
             }
             if (fields.minGuests) {
-                fields.minGuests.value = String(Math.max(1, Number(tour.minGuests || 1)));
+                fields.minGuests.value = String(Math.max(1, Number(tour.min_guests || tour.minGuests || 1)));
             }
             if (fields.maxGuests) {
-                fields.maxGuests.value = String(Math.max(1, Number(tour.maxGuests || 10)));
+                fields.maxGuests.value = String(Math.max(1, Number(tour.max_guests || tour.maxGuests || 10)));
             }
-            setGuestTypes(tour.guestTypes || ['Adult']);
             if (fields.timeSlots) {
-                fields.timeSlots.value = Array.isArray(tour.timeSlots) ? tour.timeSlots.join(', ') : '';
+                const slots = tour.time_slots_json || tour.timeSlots || [];
+                fields.timeSlots.value = Array.isArray(slots) ? slots.join(', ') : '';
             }
             if (fields.reservationType) {
-                fields.reservationType.value = tour.reservationType || 'Instant booking';
-            }
-            if (fields.freeCancellation) {
-                fields.freeCancellation.checked = Boolean(tour.freeCancellation);
-            }
-            if (fields.cancellationText) {
-                fields.cancellationText.value = tour.cancellationText || '';
-            }
-            if (fields.reservePayLater) {
-                fields.reservePayLater.checked = Boolean(tour.reserveNowPayLater);
-            }
-            if (fields.status) {
-                fields.status.value = tour.status;
-            }
-            if (fields.provider) {
-                fields.provider.value = tour.provider || '';
+                fields.reservationType.value = tour.reservation_type || tour.reservationType || 'instant';
             }
             if (fields.languages) {
                 fields.languages.value = tour.languages || '';
             }
             if (fields.includes) {
-                fields.includes.value = Array.isArray(tour.includes) ? tour.includes.join(', ') : '';
+                const includes = tour.includes || [];
+                fields.includes.value = Array.isArray(includes) ? includes.join('\n') : '';
             }
             if (fields.excludes) {
                 fields.excludes.value = tour.excludes || '';
@@ -2654,56 +2825,17 @@
                 fields.requirements.value = tour.requirements || '';
             }
             if (fields.safetyInfo) {
-                fields.safetyInfo.value = tour.safetyInfo || '';
-            }
-            if (fields.guidePhotoPreview) {
-                fields.guidePhotoPreview.src = tour.guidePhoto || '../images/manila.jpg';
-            }
-            if (fields.guideVerified) {
-                fields.guideVerified.checked = Boolean(tour.guideVerified);
-            }
-            if (fields.guideExperience) {
-                fields.guideExperience.value = String(Math.max(0, Number(tour.guideExperienceYears || 0)));
-            }
-            if (fields.guideContact) {
-                fields.guideContact.value = tour.guideContact || '';
-            }
-            if (fields.guideSocial) {
-                fields.guideSocial.value = tour.guideSocial || '';
-            }
-            if (fields.difficulty) {
-                fields.difficulty.value = tour.difficulty || 'Moderate';
-            }
-            if (fields.tags) {
-                fields.tags.value = (tour.tags || []).join(', ');
-            }
-            if (fields.weather) {
-                fields.weather.value = tour.weatherSuitability || '';
-            }
-            if (fields.bestSeason) {
-                fields.bestSeason.value = tour.bestSeason || '';
-            }
-            if (fields.childFriendly) {
-                fields.childFriendly.checked = Boolean(tour.childFriendly);
-            }
-            if (fields.petFriendly) {
-                fields.petFriendly.checked = Boolean(tour.petFriendly);
-            }
-            if (fields.rating) {
-                fields.rating.value = Number(tour.rating || 0).toFixed(2);
-            }
-            if (fields.reviews) {
-                fields.reviews.value = String(Math.max(0, Number(tour.reviews || 0)));
+                fields.safetyInfo.value = tour.safety_info || tour.safetyInfo || '';
             }
             if (fields.images) {
                 fields.images.value = '';
             }
-            if (fields.description) {
-                fields.description.value = tour.description;
-            }
-            previewGallery = (tour.gallery || [tour.image]).slice(0, 10);
+            const existingGallery = Array.isArray(tour.gallery_paths)
+                ? tour.gallery_paths
+                : (Array.isArray(tour.gallery) ? tour.gallery : []);
+            const existingCover = tour.cover_image_path || tour.coverImage || tour.image || '';
+            previewGallery = (existingGallery.length ? existingGallery : [existingCover]).filter(Boolean).slice(0, 5);
             imageTouched = false;
-            guidePhotoTouched = false;
             renderGallery(fields.imagePreview, previewGallery, tour.title, true);
             updateImageMeta();
             setUploadProgress(0);
@@ -2777,9 +2909,6 @@
         function syncToursFromApi() {
             return apiRequest('/guide/tours').then(function (data) {
                 const listings = data && Array.isArray(data.listings) ? data.listings : [];
-                if (!listings.length) {
-                    return;
-                }
                 setGuideTours(listings.map(mapApiListingToGuideTour));
                 render();
             }).catch(function () {
@@ -2808,10 +2937,62 @@
                 method: 'DELETE',
                 headers: {
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': getCsrfToken()
                 }
             });
         }
+
+        function deleteTourListingById(tourId) {
+            const id = String(tourId || '').trim();
+            if (!id) {
+                return Promise.reject(new Error('Unable to identify listing for deletion.'));
+            }
+
+            const removeFromLocalState = function () {
+                const tours = getGuideTours().filter(function (tour) {
+                    return String(tour.id) !== id;
+                });
+                setGuideTours(tours);
+                setGuideBookings(getGuideBookings().filter(function (booking) {
+                    return String(booking.tourId) !== id;
+                }));
+                setGuideReviews(getGuideReviews().filter(function (review) {
+                    return String(review.tourId) !== id;
+                }));
+                render();
+            };
+
+            // Locally-seeded tours can have non-numeric ids and are not persisted in DB.
+            if (!/^\d+$/.test(id)) {
+                removeFromLocalState();
+                return Promise.resolve({ ok: true, local: true });
+            }
+
+            return removeTourFromApi(id).then(function (result) {
+                removeFromLocalState();
+                return syncToursFromApi().catch(function () {
+                    return null;
+                }).then(function () {
+                    return result;
+                });
+            }).catch(function (error) {
+                // Reconcile with server state in case local cache drifted from backend state.
+                return syncToursFromApi().then(function () {
+                    const stillExists = getGuideTours().some(function (tour) {
+                        return String(tour.id) === id;
+                    });
+                    if (!stillExists) {
+                        return { ok: true, reconciled: true };
+                    }
+                    throw error;
+                }).catch(function () {
+                    throw error;
+                });
+            });
+        }
+
+        window.TRBL_GUIDE_DELETE_TOUR = deleteTourListingById;
 
         function render() {
             if (!listHost) {
@@ -2865,10 +3046,12 @@
                     '<div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-3">',
                     '<strong>', formatPeso(tour.price), '</strong>',
                     '<div class="d-flex gap-2">',
-                    '<a class="btn-soft" href="/tour-preview?tour=', encodeURIComponent(tour.id), '" target="_blank" rel="noopener">Preview</a>',
-                    '<button class="btn-soft" type="button" data-toggle-publish="', escapeHtml(tour.id), '">', tour.status === 'Published' ? 'Unpublish' : 'Publish', '</button>',
+                    '<a class="btn-soft" href="/tour-preview?tour=', encodeURIComponent(tour.id), '&from=guide">Preview</a>',
                     '<button class="btn-soft" type="button" data-edit-tour="', escapeHtml(tour.id), '">Edit</button>',
-                    '<button class="btn-danger" type="button" data-delete-tour="', escapeHtml(tour.id), '">Delete</button>',
+                    '<form method="POST" action="/guide/tours/', encodeURIComponent(String(tour.id)), '/delete" data-delete-form="', escapeHtml(tour.id), '" class="d-inline">',
+                    '<input type="hidden" name="_token" value="', escapeHtml(getCsrfToken()), '">',
+                    '<button class="btn-danger" type="submit" data-delete-tour="', escapeHtml(tour.id), '">Delete</button>',
+                    '</form>',
                     '</div>',
                     '</div>',
                     '</div>'
@@ -2912,7 +3095,7 @@
                 const existing = tours.find(function (tour) {
                     return fields.id && fields.id.value && tour.id === fields.id.value;
                 }) || null;
-                const payload = buildPayload(existing, fields.status ? fields.status.value : 'Published');
+                const payload = buildPayload(existing, 'published');
                 const errors = validatePayload(payload);
                 if (errors.length) {
                     const first = errors[0];
@@ -2934,6 +3117,7 @@
 
                 saveTourToApi(payload, existing ? existing.id : null).then(function (result) {
                     const listing = result && result.listing ? mapApiListingToGuideTour(result.listing) : payload;
+                    const listingId = String((listing && listing.id) || (payload && payload.id) || '').trim();
                     const localTours = getGuideTours();
                     const index = localTours.findIndex(function (tour) {
                         return String(tour.id) === String(listing.id);
@@ -2949,7 +3133,11 @@
                     writeStore(GUIDE_TOUR_DRAFT_KEY, null);
                     clearForm();
                     render();
-                    focusListingCard(listing.id);
+
+                    // Ensure freshly published listing is visible in the listings section.
+                    syncToursFromApi().finally(function () {
+                        focusListingCard(listingId);
+                    });
                 }).catch(function (error) {
                     if (error && error.code === 'auth') {
                         showToast('Please sign in as a guide to manage tours.', 'warning');
@@ -3081,8 +3269,10 @@
 
         if (listHost) {
             listHost.addEventListener('click', function (event) {
-                const editBtn = event.target.closest('[data-edit-tour]');
+                const editBtn = closestFromEventTarget(event, '[data-edit-tour]');
                 if (editBtn) {
+                    event.preventDefault();
+                    event.stopPropagation();
                     const id = editBtn.dataset.editTour;
                     const tour = getGuideTours().find(function (item) {
                         return item.id === id;
@@ -3092,51 +3282,31 @@
                     return;
                 }
 
-                const publishBtn = event.target.closest('[data-toggle-publish]');
-                if (publishBtn) {
-                    const id = publishBtn.dataset.togglePublish;
-                    const currentTour = getGuideTours().find(function (tour) {
-                        return String(tour.id) === String(id);
-                    });
-                    if (!currentTour) {
-                        return;
-                    }
-                    const nextStatus = currentTour.status === 'Published' ? 'Paused' : 'Published';
-                    const payload = Object.assign({}, currentTour, { status: nextStatus });
-                    saveTourToApi(payload, id).then(function (result) {
-                        const listing = result && result.listing ? mapApiListingToGuideTour(result.listing) : payload;
-                        const tours = getGuideTours().map(function (tour) {
-                            return String(tour.id) === String(id) ? listing : tour;
-                        });
-                        setGuideTours(tours);
-                        render();
-                        showToast('Listing status updated.', 'success');
-                    }).catch(function () {
-                        showToast('Unable to update listing status.', 'danger');
-                    });
-                    return;
-                }
-
-                const deleteBtn = event.target.closest('[data-delete-tour]');
+                const deleteBtn = closestFromEventTarget(event, '[data-delete-tour]');
                 if (!deleteBtn) {
                     return;
                 }
+
+                // Use native form submit when available for a deterministic delete path.
+                if (deleteBtn.form) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
                 const id = deleteBtn.dataset.deleteTour;
-                removeTourFromApi(id).then(function () {
-                    const tours = getGuideTours().filter(function (tour) {
-                        return String(tour.id) !== String(id);
-                    });
-                    setGuideTours(tours);
-                    setGuideBookings(getGuideBookings().filter(function (booking) {
-                        return booking.tourId !== id;
-                    }));
-                    setGuideReviews(getGuideReviews().filter(function (review) {
-                        return review.tourId !== id;
-                    }));
-                    render();
+                if (!id) {
+                    showToast('Unable to identify listing for deletion.', 'danger');
+                    return;
+                }
+
+                deleteTourListingById(id).then(function () {
                     showToast('Tour listing deleted.', 'warning');
-                }).catch(function () {
-                    showToast('Unable to delete listing right now.', 'danger');
+                }).catch(function (error) {
+                    const message = error && error.message
+                        ? error.message
+                        : 'Unable to delete listing right now.';
+                    showToast(message, 'danger');
                 });
             });
         }
@@ -3159,6 +3329,7 @@
             clearForm();
         }
 
+        setGuideTours([]);
         render();
         syncToursFromApi();
     }
@@ -3268,43 +3439,7 @@
 
             const conversationId = String(conversation.id || '').trim();
             const direct = conversationId ? getConversationPaymentState(conversationId) : null;
-            if (direct && typeof direct === 'object') {
-                return direct;
-            }
-
-            const requestId = String(conversation.tourRequestId || '').trim();
-            if (!requestId) {
-                return null;
-            }
-
-            const guideId = String(conversation.guideId || '').trim();
-            const map = getChatPaymentStateMap();
-            let best = null;
-            let bestTime = 0;
-
-            Object.keys(map).forEach(function (key) {
-                const state = map[key];
-                if (!state || typeof state !== 'object') {
-                    return;
-                }
-
-                if (String(state.requestId || '').trim() !== requestId) {
-                    return;
-                }
-
-                const stateGuideId = String(state.guideId || '').trim();
-                if (guideId && stateGuideId && stateGuideId !== guideId) {
-                    return;
-                }
-
-                const ts = Date.parse(String(state.updatedAt || state.paidAt || state.pendingAt || '')) || 0;
-                if (!best || ts >= bestTime) {
-                    best = state;
-                    bestTime = ts;
-                }
-            });
-
-            return best;
+            return direct && typeof direct === 'object' ? direct : null;
         }
 
         function parsePaymentAmountFromText(text) {
@@ -3383,7 +3518,7 @@
                 return state;
             }
 
-            return inferPaymentStateFromMessages(messages);
+            return null;
         }
 
         function renderConversationPaymentMeta(conversation, messages) {
@@ -3532,37 +3667,18 @@
             }
 
             const mergedMessages = getMergedConversationMessages(conversationId);
-            const directState = findPaymentStateForConversation(activeConversation);
-            const inferredState = resolveConversationPaymentState(activeConversation, mergedMessages);
-            let state = inferredState;
+            const state = resolveConversationPaymentState(activeConversation, mergedMessages);
 
-            const inferredStatus = String(inferredState && inferredState.status ? inferredState.status : '').toLowerCase();
-            const hasDirectStatus = String(directState && directState.status ? directState.status : '').toLowerCase();
-            if (!hasDirectStatus && (inferredStatus === 'paid' || inferredStatus === 'pending_cash_on_tour')) {
-                state = saveConversationPaymentState(conversationId, {
-                    requestId: activeConversation.tourRequestId ? String(activeConversation.tourRequestId) : '',
-                    guideId: activeConversation.guideId ? String(activeConversation.guideId) : '',
-                    guideName: 'Guide',
-                    touristName: String(activeConversation.touristName || 'Tourist'),
-                    tourTitle: String(activeConversation.tourTitle || 'Tour request'),
-                    amount: Number(inferredState && inferredState.amount ? inferredState.amount : 0),
-                    paymentMethod: String(inferredState && inferredState.paymentMethod ? inferredState.paymentMethod : (inferredStatus === 'pending_cash_on_tour' ? 'Cash on Tour' : 'N/A')),
-                    status: inferredStatus,
-                    paidAt: inferredStatus === 'paid' ? String(inferredState && inferredState.updatedAt ? inferredState.updatedAt : nowISO()) : null,
-                    pendingAt: inferredStatus === 'pending_cash_on_tour' ? String(inferredState && inferredState.updatedAt ? inferredState.updatedAt : nowISO()) : null,
-                }) || inferredState;
-            }
-
-            const suggestedRange = Number(activeConversation.budgetMin || 0) > 0 || Number(activeConversation.budgetMax || 0) > 0
-                ? formatSimulatedPeso(Number(activeConversation.budgetMin || 0)) + ' - ' + formatSimulatedPeso(Number(activeConversation.budgetMax || 0))
-                : '';
+            const suggestedBudget = Number(activeConversation.budgetMax || 0) > 0
+                ? formatSimulatedPeso(Number(activeConversation.budgetMax || 0))
+                : (Number(activeConversation.budgetMin || 0) > 0 ? formatSimulatedPeso(Number(activeConversation.budgetMin || 0)) : '');
 
             if (!state) {
                 paymentCardHost.innerHTML = [
                     '<article class="chat-payment-card">',
                     '<h2 class="chat-payment-title">Payment for tour request: ', escapeHtml(activeConversation.tourTitle || 'Tour request'), '</h2>',
                     '<p class="chat-payment-tour">Tourist sets amount and method in this conversation.</p>',
-                    suggestedRange ? '<p class="chat-payment-help">Suggested range from request: ' + escapeHtml(suggestedRange) + '</p>' : '',
+                    suggestedBudget ? '<p class="chat-payment-help">Budget price from request: ' + escapeHtml(suggestedBudget) + '</p>' : '',
                     '<p class="chat-payment-summary">No payment submitted yet.</p>',
                     '</article>'
                 ].join('');
@@ -3572,6 +3688,8 @@
             const status = String(state.status || '').toLowerCase();
             const amount = Number(state.amount || 0);
             const method = String(state.paymentMethod || 'N/A');
+            const tourStartDate = String(state.tourStartDate || '');
+            const tourStartTime = String(state.tourStartTime || '');
             const isPendingCash = status === 'pending_cash_on_tour';
 
             paymentCardHost.innerHTML = [
@@ -3582,7 +3700,8 @@
                 '<span class="chat-payment-badge ', status === 'paid' ? 'paid' : 'pending', '">', escapeHtml(paymentStatusLabel(status)), '</span>',
                 '<p class="chat-payment-summary">', escapeHtml(formatSimulatedPeso(amount) + ' via ' + method), '</p>',
                 '</div>',
-                suggestedRange ? '<p class="chat-payment-help">Suggested range from request: ' + escapeHtml(suggestedRange) + '</p>' : '',
+                (tourStartDate && tourStartTime) ? '<div class="chat-payment-schedule"><p class="small text-muted"><strong>Tour Start:</strong> ' + escapeHtml(tourStartDate + ' at ' + tourStartTime) + '</p></div>' : '',
+                suggestedBudget ? '<p class="chat-payment-help">Budget price from request: ' + escapeHtml(suggestedBudget) + '</p>' : '',
                 isPendingCash ? '<div class="mt-2"><button type="button" class="btn-charcoal" data-complete-cash-tour>Complete Tour</button></div>' : '',
                 '</article>'
             ].join('');
@@ -3861,6 +3980,13 @@
 
         if (chatBackBtn) {
             chatBackBtn.addEventListener('click', function () {
+                if (activeConversation && activeConversation.id) {
+                    const paymentStateMap = getChatPaymentStateMap();
+                    if (paymentStateMap[activeConversation.id]) {
+                        delete paymentStateMap[activeConversation.id];
+                        localStorage.setItem(CHAT_PAYMENT_STATE_KEY, JSON.stringify(paymentStateMap));
+                    }
+                }
                 mobileChatOpen = false;
                 setConversationVisibility(false);
                 if (conversationPanel) {
@@ -3871,6 +3997,13 @@
 
         if (chatShowListBtn) {
             chatShowListBtn.addEventListener('click', function () {
+                if (activeConversation && activeConversation.id) {
+                    const paymentStateMap = getChatPaymentStateMap();
+                    if (paymentStateMap[activeConversation.id]) {
+                        delete paymentStateMap[activeConversation.id];
+                        localStorage.setItem(CHAT_PAYMENT_STATE_KEY, JSON.stringify(paymentStateMap));
+                    }
+                }
                 mobileChatOpen = false;
                 setConversationVisibility(false);
                 if (conversationPanel) {
@@ -4024,6 +4157,7 @@
             ) {
                 renderList();
                 renderMessages();
+                renderPaymentCard();
             }
         });
 
@@ -4381,26 +4515,36 @@
         const tourMap = tours.reduce(function (acc, t) { acc[t.id] = t; return acc; }, {});
         const bookings = getGuideBookings();
         const listingTxs = bookings
-            .filter(function (bk) { return isBookedStatus(bk && bk.status); })
+            .filter(function (bk) {
+                const booking = bk && typeof bk === 'object' ? bk : {};
+                const lifecycle = String(booking.bookingStatus || booking.statusRaw || booking.status || '').trim().toLowerCase();
+                const payment = String(booking.paymentStatus || '').trim().toLowerCase();
+                const isCancelled = lifecycle === 'cancelled' || lifecycle === 'declined';
+
+                return payment === 'paid' && !isCancelled;
+            })
             .map(function (bk) {
                 const tour = tourMap[bk.tourId];
                 const price = tour ? Number(tour.price || 0) : 0;
                 const guests = parseGuestCount(bk.guests);
                 // Prefer DB-stored total_amount (captured from API); fall back to price × guests
                 const amount = Number(bk.amount || 0) || (price * guests);
+                // Prefer booking.tourTitle from API; fall back to tour.title or default
+                const bookingTourTitle = String(bk.tourTitle || '').trim();
+                const tourTitle = bookingTourTitle || (tour ? String(tour.title || 'Tour Listing') : 'Tour Listing');
                 return {
                     id: 'listing-' + String(bk.id),
                     type: 'listing',
                     touristName: String(bk.touristName || 'Tourist'),
                     touristAvatar: normalizeAssetPath(bk.touristAvatar, '/images/manila.jpg'),
-                    tourTitle: tour ? String(tour.title || 'Tour Listing') : 'Tour Listing',
+                    tourTitle: tourTitle,
                     amount: amount,
                     paymentMethod: 'Tour Booking',
                     status: 'paid',
-                    paidAt: bk.bookingDate || null,
-                    date: bk.bookingDate || nowISO(),
-                    updatedAt: bk.bookingDate || nowISO(),
-                    createdAt: bk.bookingDate || nowISO()
+                    paidAt: bk.paymentReceivedAt || bk.paidAt || bk.bookingDate || null,
+                    date: bk.paymentReceivedAt || bk.paidAt || bk.bookingDate || nowISO(),
+                    updatedAt: bk.updatedAt || bk.paymentReceivedAt || bk.paidAt || bk.bookingDate || nowISO(),
+                    createdAt: bk.createdAt || bk.bookingDate || nowISO()
                 };
             });
 
@@ -4419,6 +4563,7 @@
         return {
             id: String(source.id || uid('booking')),
             tourId: source.tourId ? String(source.tourId) : '',
+            tourTitle: String(source.tourTitle || ''),
             touristName: String(source.touristName || 'Tourist'),
             touristAvatar: normalizeAssetPath(source.touristAvatar, '/images/manila.jpg'),
             bookingDate: source.bookingDate || null,
@@ -4507,6 +4652,7 @@
         function renderSimulatedEarningsPanel() {
             const totalNode = qs('#simulatedEarningsValue');
             const listNode = qs('#simulatedTransactionList');
+            const metaNode = qs('#simulatedTransactionMeta');
             if (!totalNode && !listNode) {
                 return;
             }
@@ -4530,8 +4676,22 @@
             }
 
             if (!transactions.length) {
+                if (metaNode) {
+                    metaNode.textContent = 'No tour request payments to show yet.';
+                }
                 listNode.innerHTML = '<div class="dash-empty-state"><i class="fa-solid fa-receipt"></i><p>No tour request payments yet.</p></div>';
                 return;
+            }
+
+            const overviewTransactions = transactions.slice(0, 3);
+
+            if (metaNode) {
+                const shown = overviewTransactions.length;
+                if (transactions.length > shown) {
+                    metaNode.textContent = 'Showing latest ' + shown + ' of ' + transactions.length + ' records. Click View More for full list.';
+                } else {
+                    metaNode.textContent = 'Showing all ' + shown + ' record' + (shown === 1 ? '' : 's') + '.';
+                }
             }
 
             const conversationAvatarById = new Map();
@@ -4542,7 +4702,7 @@
                 if (cid) { conversationAvatarById.set(cid, normalizeAssetPath(conversation.avatar, '/images/manila.jpg')); }
             });
 
-            listNode.innerHTML = transactions.map(function (item) {
+            listNode.innerHTML = overviewTransactions.map(function (item) {
                 const amount = formatSimulatedPeso(Number(item.amount || 0));
                 const method = String(item.paymentMethod || 'N/A');
                 const tourist = String(item.touristName || 'Tourist');
@@ -4889,6 +5049,8 @@
     }
 
     function init() {
+        runInitStep('dropdown-dismiss-on-navigation', bindDropdownDismissOnNavigation);
+
         // Bind global actions first so critical controls (like logout) keep working even if other modules fail.
         runInitStep('global-actions', initGlobalActions);
         runInitStep('seed-data', ensureSeedData);
@@ -4896,6 +5058,7 @@
             applyGuideWorkspaceIdentity(getGuideProfile());
         });
         runInitStep('sync-guide-profile', syncGuideProfileFromApi);
+        runInitStep('profile-realtime-sync', initProfileRealtimeSync);
         runInitStep('sidebar', initSidebar);
         runInitStep('topbar-scroll', initTopbarScroll);
         runInitStep('active-navigation', setActiveNavigation);

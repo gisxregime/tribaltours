@@ -1,0 +1,163 @@
+<!-- UPDATED TOUR CREATION FORM - Replace lines 85-243 in resources/views/legacy/pages/tours.blade.php -->
+
+<form id="tourForm" class="guide-form-grid">
+    <input id="tourId" type="hidden">
+
+    <div class="full"><h3 class="h6 mb-1">Tour Information</h3></div>
+    
+    <label class="full">
+        <span class="field-label">Tour Title</span>
+        <input id="tourTitle" class="input-soft" type="text" placeholder="Island Hopping & Hidden Lagoons" required>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Short Description</span>
+        <textarea id="tourShortDescription" class="input-soft" rows="3" placeholder="Brief overview of your tour experience" required></textarea>
+    </label>
+    
+    <label>
+        <span class="field-label">Tour Category</span>
+        <select id="tourCategory" class="select-soft" required>
+            <option value="">Select a category</option>
+            <option value="Island Hopping">Island Hopping</option>
+            <option value="Diving">Diving</option>
+            <option value="Hiking">Hiking</option>
+            <option value="Cultural">Cultural</option>
+            <option value="Food Tour">Food Tour</option>
+            <option value="City Tour">City Tour</option>
+            <option value="Adventure">Adventure</option>
+            <option value="Historical">Historical</option>
+            <option value="Beach">Beach</option>
+            <option value="Nature">Nature</option>
+            <option value="Wellness">Wellness</option>
+            <option value="Photography">Photography</option>
+        </select>
+    </label>
+    
+    <label>
+        <span class="field-label">Tour Duration</span>
+        <input id="tourDuration" class="input-soft" type="text" placeholder="e.g., Half Day, Full Day, 2 Days, 3 Days" required>
+    </label>
+    
+    <label>
+        <span class="field-label">Region</span>
+        <select id="tourRegion" class="select-soft" required>
+            <option value="">Select a region</option>
+            <option value="Region I - Ilocos Region">Region I – Ilocos Region</option>
+            <option value="Region II - Cagayan Valley">Region II – Cagayan Valley</option>
+            <option value="Region III - Central Luzon">Region III – Central Luzon</option>
+            <option value="CAR - Cordillera">CAR – Cordillera Administrative Region</option>
+            <option value="Region IV-A - CALABARZON">Region IV-A – CALABARZON</option>
+            <option value="MIMAROPA">MIMAROPA – Mindoro, Marinduque, Romblon, Palawan</option>
+            <option value="Region V - Bicol">Region V – Bicol Region</option>
+            <option value="Region VI - Western Visayas">Region VI – Western Visayas</option>
+            <option value="Region VII - Central Visayas">Region VII – Central Visayas</option>
+            <option value="Region VIII - Eastern Visayas">Region VIII – Eastern Visayas</option>
+            <option value="Region IX - Zamboanga">Region IX – Zamboanga Peninsula</option>
+            <option value="Region X - Northern Mindanao">Region X – Northern Mindanao</option>
+            <option value="Region XI - Davao">Region XI – Davao Region</option>
+            <option value="Region XII - SOCCSKSARGEN">Region XII – SOCCSKSARGEN</option>
+            <option value="Region XIII - Caraga">Region XIII – Caraga</option>
+            <option value="NCR - National Capital Region">NCR – National Capital Region</option>
+            <option value="ARMM">ARMM – Autonomous Region in Muslim Mindanao</option>
+            <option value="BARMM">BARMM – Bangsamoro Autonomous Region</option>
+        </select>
+    </label>
+    
+    <label>
+        <span class="field-label">City / Municipality</span>
+        <input id="tourCity" class="input-soft" type="text" placeholder="e.g., Puerto Princesa" required>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Specific Meeting Area</span>
+        <input id="tourMeetingArea" class="input-soft" type="text" placeholder="e.g., City Center, Puerto Princesa Cityport" required>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Meeting Point</span>
+        <input id="tourMeetingPoint" class="input-soft" type="text" placeholder="Exact meeting point details for tourists" required>
+    </label>
+
+    <div class="full mt-3"><h3 class="h6 mb-1">Images</h3></div>
+    <label class="full">
+        <span class="field-label">Add Images (3 to 5 required)</span>
+        <input id="tourImages" class="input-soft" type="file" accept="image/*" multiple>
+        <div class="guide-image-tools mt-2">
+            <small id="tourImageMeta" class="text-muted">No images selected yet.</small>
+            <button id="tourClearImages" class="btn-soft py-1 px-2" type="button">Clear images</button>
+        </div>
+        <div id="tourImagePreview" class="post-gallery guide-gallery mt-2"></div>
+    </label>
+
+    <div class="full mt-3"><h3 class="h6 mb-1">Pricing & Capacity</h3></div>
+    <label>
+        <span class="field-label">Base Price (₱)</span>
+        <input id="tourPrice" class="input-soft" type="number" min="1" placeholder="e.g., 1500" required>
+    </label>
+    
+    <label>
+        <span class="field-label">Per person or Per group</span>
+        <select id="tourPriceType" class="select-soft" required>
+            <option value="per_person">Per person</option>
+            <option value="per_group">Per group</option>
+        </select>
+    </label>
+    
+    <label>
+        <span class="field-label">Minimum Guests</span>
+        <input id="tourMinGuests" class="input-soft" type="number" min="1" value="1" required>
+    </label>
+    
+    <label>
+        <span class="field-label">Maximum Guests</span>
+        <input id="tourMaxGuests" class="input-soft" type="number" min="1" value="10" required>
+    </label>
+
+    <div class="full mt-3"><h3 class="h6 mb-1">Availability</h3></div>
+    <label class="full">
+        <span class="field-label">Available Time Slots (comma separated)</span>
+        <input id="tourTimeSlots" class="input-soft" type="text" placeholder="08:00 AM, 01:00 PM, 05:00 PM" required>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Reservation Type</span>
+        <select id="tourReservationType" class="select-soft" required>
+            <option value="instant">Instant Booking</option>
+            <option value="manual">Manual Approval</option>
+        </select>
+        <small class="text-muted d-block mt-1">Instant: Tourist books and pays immediately. Manual: You approve/reject each booking.</small>
+    </label>
+
+    <div class="full mt-3"><h3 class="h6 mb-1">Tour Details</h3></div>
+    <label>
+        <span class="field-label">Languages Spoken</span>
+        <input id="tourLanguages" class="input-soft" type="text" placeholder="English, Filipino, Cebuano" required>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Tour Includes</span>
+        <textarea id="tourIncludes" class="input-soft" rows="2" placeholder="Boat transfer, Meals, Entrance fees, Guide service" required></textarea>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Tour Excludes</span>
+        <textarea id="tourExcludes" class="input-soft" rows="2" placeholder="Travel insurance, Personal expenses, Tips"></textarea>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Requirements / Reminders</span>
+        <textarea id="tourRequirements" class="input-soft" rows="2" placeholder="Bring swimwear, sunscreen, water bottle, etc."></textarea>
+    </label>
+    
+    <label class="full">
+        <span class="field-label">Safety Information</span>
+        <textarea id="tourSafetyInfo" class="input-soft" rows="2" placeholder="Safety guidelines, equipment provided, age restrictions, etc."></textarea>
+    </label>
+
+    <div class="full d-flex flex-wrap gap-2 mt-3">
+        <button id="tourSaveDraft" class="btn-soft" type="button"><i class="fa-regular fa-floppy-disk me-2"></i>Save Draft</button>
+        <button class="btn-gold" type="submit"><i class="fa-solid fa-paper-plane me-2"></i>Publish Listing</button>
+        <button id="tourFormReset" class="btn-soft" type="button">Reset</button>
+    </div>
+</form>
